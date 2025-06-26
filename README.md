@@ -190,6 +190,10 @@ This project is licensed under the terms of the LICENSE file provided in this re
 
 ---
 
+**Note:** This controller has only been tested with the Endless Pools Fastlane Pro model configured with metric units. Minimum and maximum speeds may differ on other Endless Pools models or configurations.
+
+---
+
 ## Deploying the Code to Arduino/ESP8266
 
 1. **Hardware Requirements**
