@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UDP monitor</title>
+<style>
+  html, body {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  body {
+    font-family: system-ui, Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+  }
+  h1 {
+    margin: 0;
+    padding: 8px 12px;
+    background: #222;
+    color: #eee;
+    font-size: 18px;
+    display: flex;
+    align-items: center;
+  }
+  #autoScrollBtn {
+    margin-left: 12px;
+    padding: 4px 12px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #wrap {
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+  }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  th, td {
+    border: 1px solid #aaa;
+    padding: 4px;
+    font-size: 12px;
+    white-space: nowrap;
+    text-align: center;
+  }
+  tr:nth-child(even) {
+    background: #f6f6f6;
+  }
+  thead th {
+    position: sticky;
+    top: 0;
+    background: #fff;
+    z-index: 2;
+  }
+  .from-9750 {
+    background: #add8e6 !important; /* light blue */
+  }
+</style>
+</head>
+<body>
+<h1>
+  Last&nbsp;10000 UDP messages (auto-scroll)
+  <button id="autoScrollBtn" type="button">Auto-Scroll: ON</button>
+</h1>
+<div id="wrap">
+<table id="tbl">
+  <thead>
+    <tr>
+      <th>#</th><th>Port</th><th>Msg&nbsp;ID</th><th>Command</th>
+      <th>Param</th><th>Timestamp</th>
+      <th>Cur&nbsp;Spd</th><th>Tgt&nbsp;Spd</th>
+      <th>Pace</th><th>Remain</th>
+      <th>Run&nbsp;s</th><th>Total&nbsp;s</th>
+      <th>Copy</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<!-- socket.io delivered automatically by Express -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const tbody = document.querySelector('#tbl tbody');
+const MAX   = 10000;
+const rows  = [];                   // circular buffer of <tr> elements
+const msgs  = [];                   // circular buffer of msg objects for comparison
+const ioCli = io();
+
+// Helper function to parse "m:ss" time string to total seconds
+function parseTimeToSeconds(timeStr) {
+  const parts = timeStr.split(':');
+  if (parts.length !== 2) return NaN;
+  const minutes = parseInt(parts[0], 10);
+  const seconds = parseInt(parts[1], 10);
+  if (isNaN(minutes) || isNaN(seconds)) return NaN;
+  return minutes * 60 + seconds;
+}
+
+// Helper function to format total seconds to "m:ss" time string
+function formatSecondsToTime(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.round(totalSeconds % 60);
+  return minutes + ':' + seconds.toString().padStart(2, '0');
+}
+
+let autoScroll = true;
+const wrap = document.getElementById('wrap');
+const autoScrollBtn = document.getElementById('autoScrollBtn');
+
+autoScrollBtn.addEventListener('click', () => {
+  autoScroll = !autoScroll;
+  autoScrollBtn.textContent = 'Auto-Scroll: ' + (autoScroll ? 'ON' : 'OFF');
+});
+
+wrap.addEventListener('scroll', () => {
+  // If user scrolls up, turn off auto-scroll
+  const atBottom = wrap.scrollTop + wrap.clientHeight >= wrap.scrollHeight - 2;
+  if (!atBottom && autoScroll) {
+    autoScroll = false;
+    autoScrollBtn.textContent = 'Auto-Scroll: OFF';
+  } else if (atBottom && !autoScroll) {
+    autoScroll = true;
+    autoScrollBtn.textContent = 'Auto-Scroll: ON';
+  }
+});
+
+function copyHex(hex) {
+  navigator.clipboard.writeText(hex).catch(() => {
+    // fallback for older browsers
+    const textarea = document.createElement('textarea');
+    textarea.value = hex;
+    document.body.appendChild(textarea);
+    textarea.select();
+    document.execCommand('copy');
+    document.body.removeChild(textarea);
+  });
+}
+
+function areRowsEqual(a, b) {
+  // Compare all fields except idx and timestamp (and hexPayload, which is for copy)
+  if (!a || !b) return false;
+  return (
+    a.port === b.port &&
+    a.msgId === b.msgId &&
+    a.cmdText === b.cmdText &&
+    (a.param ?? '') === (b.param ?? '') &&
+    (a.curSpeed ?? '') === (b.curSpeed ?? '') &&
+    (a.tgtSpeed ?? '') === (b.tgtSpeed ?? '') &&
+    (a.pace ?? '') === (b.pace ?? '') &&
+    (a.remaining ?? '') === (b.remaining ?? '') &&
+    (a.runtimeSec?.toFixed?.(1) ?? '') === (b.runtimeSec?.toFixed?.(1) ?? '') &&
+    (a.totalRuntimeSec?.toFixed?.(1) ?? '') === (b.totalRuntimeSec?.toFixed?.(1) ?? '')
+  );
+}
+
+// New function to check if two rows differ only in remaining and runtimeSec
+function differOnlyInRemainAndRunS(a, b) {
+  if (!a || !b) return false;
+  return (
+    a.port === b.port &&
+    a.msgId === b.msgId &&
+    a.cmdText === b.cmdText &&
+    (a.param ?? '') === (b.param ?? '') &&
+    (a.curSpeed ?? '') === (b.curSpeed ?? '') &&
+    (a.tgtSpeed ?? '') === (b.tgtSpeed ?? '') &&
+    (a.pace ?? '') === (b.pace ?? '') &&
+    (a.totalRuntimeSec?.toFixed?.(1) ?? '') === (b.totalRuntimeSec?.toFixed?.(1) ?? '')
+  );
+}
+
+let repeatCount = 1;
+
+function add(msg){
+  // Check if previous message is identical (excluding idx, timestamp, hexPayload)
+  const prevMsg = msgs[msgs.length - 1];
+  if (areRowsEqual(msg, prevMsg)) {
+    repeatCount++;
+    // Update the first cell of the last row (the only row for this group)
+    if (rows.length > 0) {
+      rows[rows.length - 1].children[0].textContent = repeatCount;
+    }
+    // Do not add a new row for repeated messages
+  } else if (differOnlyInRemainAndRunS(msg, prevMsg)) {
+    // Combine rows differing only in remaining and runtimeSec
+    repeatCount++;
+    if (rows.length > 0) {
+      const lastRow = rows[rows.length - 1];
+      // Update repeat count
+      lastRow.children[0].textContent = repeatCount;
+
+      // Initialize min/max values if not present
+      if (typeof msgs[msgs.length - 1].minRemainSec !== 'number' || typeof msgs[msgs.length - 1].maxRemainSec !== 'number') {
+        const initialRemainSec = parseTimeToSeconds(msgs[msgs.length - 1].remaining);
+        msgs[msgs.length - 1].minRemainSec = initialRemainSec;
+        msgs[msgs.length - 1].maxRemainSec = initialRemainSec;
+      }
+      if (typeof msgs[msgs.length - 1].minRunSec !== 'number' || typeof msgs[msgs.length - 1].maxRunSec !== 'number') {
+        const initialRunSec = msgs[msgs.length - 1].runtimeSec;
+        msgs[msgs.length - 1].minRunSec = initialRunSec;
+        msgs[msgs.length - 1].maxRunSec = initialRunSec;
+      }
+
+      // Update min/max for remaining
+      const currRemainSec = parseTimeToSeconds(msg.remaining);
+      msgs[msgs.length - 1].minRemainSec = Math.min(msgs[msgs.length - 1].minRemainSec, currRemainSec);
+      msgs[msgs.length - 1].maxRemainSec = Math.max(msgs[msgs.length - 1].maxRemainSec, currRemainSec);
+
+      // Update min/max for runtimeSec
+      const currRunSec = msg.runtimeSec;
+      msgs[msgs.length - 1].minRunSec = Math.min(msgs[msgs.length - 1].minRunSec, currRunSec);
+      msgs[msgs.length - 1].maxRunSec = Math.max(msgs[msgs.length - 1].maxRunSec, currRunSec);
+
+      // Update displayed text for remaining
+      const minRemain = msgs[msgs.length - 1].minRemainSec;
+      const maxRemain = msgs[msgs.length - 1].maxRemainSec;
+      lastRow.children[9].textContent = minRemain === maxRemain ? formatSecondsToTime(minRemain) : formatSecondsToTime(minRemain) + ' - ' + formatSecondsToTime(maxRemain);
+
+      // Update displayed text for runtimeSec
+      const minRunS = msgs[msgs.length - 1].minRunSec;
+      const maxRunS = msgs[msgs.length - 1].maxRunSec;
+      lastRow.children[10].textContent = minRunS === maxRunS ? minRunS.toFixed(1) : minRunS.toFixed(1) + ' - ' + maxRunS.toFixed(1);
+
+      // Update stored msg to reflect combined min/max for remain and runtimeSec as strings for equality checks
+      msgs[msgs.length - 1].remaining = minRemain === maxRemain ? formatSecondsToTime(minRemain) : formatSecondsToTime(minRemain) + ' - ' + formatSecondsToTime(maxRemain);
+      msgs[msgs.length - 1].runtimeSec = minRunS === maxRunS ? minRunS : minRunS + ' - ' + maxRunS;
+    }
+  } else {
+    repeatCount = 1;
+    // Add a new row for a new message
+    const tr=document.createElement('tr');
+    if(msg.port === 9750) {
+      tr.classList.add('from-9750');
+    }
+    tr.innerHTML = `
+      <td>1</td>
+      <td>${msg.port}</td>
+      <td>${msg.msgId !== undefined ? '0x' + msg.msgId.toString(16).toUpperCase().padStart(2, '0') : ''}</td>
+      <td>${msg.cmdText}</td>
+      <td>${msg.param ?? ''}</td>
+      <td>${msg.timestamp ? new Date(msg.timestamp).toLocaleString() : ''}</td>
+      <td>${msg.curSpeed ?? ''}</td>
+      <td>${msg.tgtSpeed ?? ''}</td>
+      <td>${msg.pace ?? ''}</td>
+      <td>${msg.remaining ?? ''}</td>
+      <td>${msg.runtimeSec?.toFixed?.(1) ?? ''}</td>
+      <td>${msg.totalRuntimeSec?.toFixed?.(1) ?? ''}</td>
+      <td><button onclick="copyHex('${msg.hexPayload}')">Copy</button></td>`;
+    tbody.appendChild(tr);
+    rows.push(tr);
+    msgs.push(msg);
+
+    if(rows.length > MAX){
+      tbody.removeChild(rows.shift());
+      msgs.shift();
+    }
+    // auto-scroll if enabled
+    if (autoScroll) wrap.scrollTop = tbody.scrollHeight;
+  }
+}
+
+ioCli.on('udpMsg', add);
+
+
+
+</script>
+</body>
+</html>

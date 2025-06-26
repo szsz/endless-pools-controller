@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>UDP monitor</title>
+<link rel="stylesheet" href="static/status.css">
+</head>
+<body>
+<h1>
+  Last&nbsp;10000 UDP messages (auto-scroll)
+  <button id="autoScrollBtn" type="button">Auto-Scroll: ON</button>
+</h1>
+<div id="wrap">
+<table id="tbl">
+  <thead>
+    <tr>
+      <th>#</th><th>Port</th><th>Msg&nbsp;ID</th><th>Command</th>
+      <th>Param</th><th>Timestamp</th>
+      <th>Cur&nbsp;Spd</th><th>Tgt&nbsp;Spd</th>
+      <th>Pace</th><th>Remain</th>
+      <th>Run&nbsp;s</th><th>Total&nbsp;s</th>
+      <th>Copy</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+</div>
+
+<script src="static/status.js"></script>
+</body>
+</html>

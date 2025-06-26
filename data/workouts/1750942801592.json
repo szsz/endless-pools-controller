@@ -1,0 +1,26 @@
+{
+    "id": "1750942801592",
+    "title": "test",
+    "swims": [
+        {
+            "speed": 71,
+            "dur": 4,
+            "note": "superfast"
+        },
+        {
+            "speed": 90,
+            "dur": 10,
+            "note": "slower"
+        },
+        {
+            "speed": 0,
+            "dur": 10,
+            "note": ""
+        },
+        {
+            "speed": 98,
+            "dur": 30,
+            "note": ""
+        }
+    ]
+}

@@ -1,0 +1,25 @@
+Value,Command
+00,heartbeat during workout pause
+08,ildle off
+0a,end of swim
+0b,idle increasing spead
+0e,idle turning off
+0f,idle on
+1f,Start
+21,Stop
+22,pause workout
+23,unpause workout
+24,Set Pace
+25,Set Duration
+27,Intitilize workout2
+33,Initialize workout
+34,add swim to workout
+35,start workout
+36,cancel workout
+40,got 33
+48,got  info off
+49,turning on
+4a,slowing down
+4b,increasing speed turning on
+4e,turning off
+4f,got info on

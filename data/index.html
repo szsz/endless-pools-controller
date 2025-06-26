@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ESP Workout Planner</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    #toggleSidebarBtn {
+      font-size: 0.8rem;
+      padding: 0.15rem 0.5rem;
+      margin-left: 0.5rem;
+      vertical-align: middle;
+      height: 1.8rem;
+      line-height: 1.4rem;
+      cursor: pointer;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <nav id="sidebar" aria-label="Workouts List" style="display:block;">
+      <h3>Workouts</h3>
+      <ul id="workoutList"></ul>
+      <button id="newBtn" aria-label="Create New Workout">＋ New workout</button>
+    </nav>
+
+    <main id="main" role="main">
+      <header>
+        <h2 id="paneTitle">Workout Editor</h2>
+        <button id="toggleSidebarBtn" aria-expanded="false" aria-controls="sidebar" aria-label="Show or hide workouts">Show Workouts</button>
+      </header>
+
+      <section id="editorPane">
+        <label for="titleIn">Title
+          <input id="titleIn" type="text" placeholder="Workout name" />
+        </label>
+
+  <add-swim id="addRow"></add-swim>
+
+        <table id="swimTab" aria-label="Swim Segments">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Pace<br />(/100 m)</th>
+              <th>Time</th>
+              <th>Dist</th>
+              <th>Note</th>
+              <th id="actionsHeader">Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+
+        <div class="actions">
+          <button id="saveBtn" aria-label="Save Workout">💾 Save</button>
+          <button id="startSrv" aria-label="Start Workout">▶ Start</button>
+          <button id="pauseBtn" disabled hidden aria-label="Pause Workout">⏸ Pause</button>
+          <button id="delBtn" aria-label="Delete Workout">🗑 Delete</button>
+        </div>
+
+        <div id="srvStatus" aria-live="polite" style="font-size: 0.9rem; margin-top: 0.3rem;"></div>
+
+        <div id="runner" hidden aria-live="polite" aria-atomic="true">
+          Current: <span id="runNote"></span><br />
+          Time left: <span id="runTime"></span> Distance left: <span id="runDist"></span>
+          <div id="queue"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  
+  <!-- Removed inline JavaScript to avoid redeclaration errors -->
+  
+  <!-- JavaScript logic moved to data/static/app.js -->
+</script>
+
+  <script type="module" src="/static/add-swim.js"></script> 
+  <script src="/static/app.js"></script>
+</body>
+</html>

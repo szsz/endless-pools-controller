@@ -1,0 +1,66 @@
+{
+    "id": "1750867563160",
+    "title": "S",
+    "swims": [
+        {
+            "speed": 150,
+            "dur": 120,
+            "note": "get wet"
+        },
+        {
+            "speed": 100,
+            "dur": 200,
+            "note": "warm up"
+        },
+        {
+            "speed": 0,
+            "dur": 30,
+            "note": ""
+        },
+        {
+            "speed": 90,
+            "dur": 45,
+            "note": "Fly"
+        },
+        {
+            "speed": 0,
+            "dur": 45,
+            "note": ""
+        },
+        {
+            "speed": 101,
+            "dur": 101,
+            "note": "Brest"
+        },
+        {
+            "speed": 0,
+            "dur": 210,
+            "note": ""
+        },
+        {
+            "speed": 100,
+            "dur": 400,
+            "note": ""
+        },
+        {
+            "speed": 0,
+            "dur": 210,
+            "note": ""
+        },
+        {
+            "speed": 90,
+            "dur": 180,
+            "note": ""
+        },
+        {
+            "speed": 0,
+            "dur": 30,
+            "note": ""
+        },
+        {
+            "speed": 120,
+            "dur": 120,
+            "note": ""
+        }
+    ]
+}
