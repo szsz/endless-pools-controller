@@ -38,7 +38,10 @@ bool WorkoutManager::run(const String &workout_id)
 
   SwimMachine::loadWorkout(segments);
   if (!SwimMachine::start())
+  {
+    Serial.printf("Could not start swim machine");
     return false;
+  }
 
   push_status_();
   return true;

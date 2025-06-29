@@ -14,7 +14,6 @@ es.addEventListener("status", (e) => {
   pauseBtn.textContent = st.paused ? "▶ Resume" : "⏸ Pause";
   pauseBtn.setAttribute("aria-pressed", st.paused ? "true" : "false");
 
-  $("runNote").textContent = st.current_step_note || ((st.pace == 0) ? "Rest" : "Swim");
   document.title = st.workout_title || "Workout Runner";
 
   let timeLeftMSecs = 0;
@@ -29,29 +28,29 @@ es.addEventListener("status", (e) => {
 
   if (st.remaining_swims && st.remaining_swims.length > 0) {
     const pace = st.remaining_swims[0].pace100s || 0;
+    
     if (pace === 0) {
-      $("runDist").textContent = "Rest";
-      $("runPace").textContent = "";
+      $("runPace").style.display = "none";
+      $("runDist").style.display = "none";
+      $("runNote").textContent = st.current_step_note || "Rest";
     } else {
-      const distLeft = Math.round((timeLeftMSecs / 10) / pace);
-      $("runDist").textContent = distLeft + " m";
-      // Show pace as mm:ss/100m
+      $("runPace").style.display = "";
+      $("runDist").style.display = "";
       const paceMin = Math.floor(pace / 60);
       const paceSec = pace % 60;
       $("runPace").textContent = `Pace: ${paceMin}:${paceSec.toString().padStart(2, "0")} /100m`;
+      
+      $("runNote").textContent = st.current_step_note || "Swim";
+      const distLeft = Math.round((timeLeftMSecs / 10) / pace);
+      $("runDist").textContent = distLeft + " m";
+      // Show pace as mm:ss/100m
     }
   } else {
     $("runDist").textContent = "";
     $("runPace").textContent = "";
   }
 
-  let isSwim = false;
-  if (st.remaining_swims && st.remaining_swims.length > 0) {
-    const pace = st.remaining_swims[0].pace100s || 0;
-    isSwim = pace !== 0;
-  }
-  window._isSwimMode = isSwim;
-  updateTimeBigMode(isSwim);
+  updateTimeBigMode();
 
   if (st.remaining_swims && st.remaining_swims.length > 1) {
     let tableHtml = `<table id="queueTable" aria-label="Upcoming swim steps">

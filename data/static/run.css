@@ -154,8 +154,17 @@ body {
 
 
 #runTime.superbig {
-  font-size: 18rem;
-  color: green 
+  font-size: 15rem;
+  color: green;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 9999;
+  opacity: 0.8;
+  pointer-events: none;
+  margin-top: -0.15em !important;
 }
 
 /* Hide all other elements except #runTime when in fullscreen counter mode */

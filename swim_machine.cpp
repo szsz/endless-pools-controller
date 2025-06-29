@@ -263,7 +263,9 @@ void SwimMachine::loadWorkout(const std::vector<SwimMachine::Segment> &segs)
 bool SwimMachine::start()
 {
   if (workout.empty())
+  {
     return false;
+  }
 
   /* send TOTAL ACTIVE duration once */
   uint16_t tot = 0;
@@ -272,7 +274,9 @@ bool SwimMachine::start()
       tot += s.durSec;
 
   if (tot > 90 * 60 - 10)
+  {
     return false; // too long workout.
+  }
   setDuration(tot + 10);
 
   sim.idx = -1; // will advance on first tick()
