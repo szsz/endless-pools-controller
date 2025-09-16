@@ -1,4 +1,4 @@
-#include <ESP8266WiFi.h>
+#include <WiFi.h>
 #include "swim_machine.h"
 #include <WiFiUdp.h>
 #include <vector>
@@ -31,10 +31,29 @@ const uint16_t multicastPort = 45654;
 static WiFiUDP udp;
 static IPAddress peer_ip(255, 255, 255, 255);
 static uint16_t PEER_PORT = 9750;
+static bool broadcastReady = false;
 
 void setupBroadcast()
 {
-  multicastUDP.begin(multicastPort); // listen on all interfaces on port
+  if (broadcastReady) return;
+
+  // Only start sockets when WiFi/LWIP is ready (STA connected or AP active)
+  wifi_mode_t m = WiFi.getMode();
+  bool staReady = (m & WIFI_MODE_STA) && (WiFi.status() == WL_CONNECTED);
+  bool apReady  = (m & WIFI_MODE_AP) && (WiFi.softAPIP() != IPAddress(0,0,0,0));
+  if (!(staReady || apReady))
+  {
+    return; // try again later from tick()
+  }
+
+  udp.begin(0); // allocate UDP PCB
+  if (!multicastUDP.beginMulticast(multicastAddr, multicastPort))
+  {
+    // failed to join multicast (e.g. interface not ready) – retry later
+    return;
+  }
+
+  broadcastReady = true;
 }
 
 void SwimMachine::setPeerIP(IPAddress ip)
@@ -245,7 +264,7 @@ void motorStop()
  * ================================================================= */
 void SwimMachine::begin(void (*push_network_event)(const uint8_t *data, size_t len))
 {
-  setupBroadcast();
+  // Defer network socket setup until WiFi is ready (done lazily in tick())
   push_network_event_func = push_network_event;
 }
 
@@ -319,8 +338,13 @@ void SwimMachine::stop()
 /* --------------------------------------------------------------- */
 void SwimMachine::tick()
 {
-  loopBroadcastListener();
-  sendPkt();
+  // Lazily initialize multicast/UDP once networking is ready
+  if (!broadcastReady) setupBroadcast();
+  if (broadcastReady)
+  {
+    loopBroadcastListener();
+    sendPkt();
+  }
 
   if (!sim.active || sim.paused)
     return;

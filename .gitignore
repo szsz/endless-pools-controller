@@ -1,2 +1,4 @@
 
 data/wifi_config.json
+.pio
+.vscode

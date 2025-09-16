@@ -69,7 +69,12 @@ void WorkoutManager::push_status_()
 {
   SwimMachine::SwimStatus st = SwimMachine::getStatus();
 
-  StaticJsonDocument<8192> doc; // increase size if needed
+  // Build status JSON on the heap to avoid loopTask stack overflow
+  const size_t base = 2048;              // base for fixed fields
+  const size_t per  = 64;                // per remaining_swims entry (approx)
+  size_t cap = base + (current_workout_.steps.size() * per);
+  if (cap > 6144) cap = 6144;            // clamp to a sane upper bound
+  DynamicJsonDocument doc(cap);
   doc["running"] = st.active;
   doc["paused"] = st.paused;
   doc["current_step"] = st.idx;

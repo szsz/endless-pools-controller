@@ -4,7 +4,11 @@
 using namespace WorkoutStorage;
 
 bool WorkoutStorage::begin() {
-  if (!LittleFS.begin()) return false;
+  // Try to mount the "spiffs" labeled partition used by huge_app.csv; format on failure.
+  if (!LittleFS.begin(false, "/littlefs", 10, "spiffs")) {
+    Serial.println("LittleFS mount failed in WorkoutStorage; formatting...");
+    LittleFS.begin(true, "/littlefs", 10, "spiffs");
+  }
   if (!LittleFS.exists("/workouts")) {
     LittleFS.mkdir("/workouts");
   }
@@ -18,9 +22,15 @@ static String path_for(const String& id) {
 
 
 String WorkoutStorage::to_json(const Workout &w) {
-  StaticJsonDocument<2048> doc;
+  // Use heap allocation to avoid stack overflow; size based on content
+  size_t cap = 512 + (w.steps.size() * 96);
+  for (const auto &s : w.steps) cap += s.note.length();
+  if (cap < 1024) cap = 1024;
+  if (cap > 8192) cap = 8192;
+  DynamicJsonDocument doc(cap);
+
   doc["id"] = String(w.id);        // store as string
-  doc["title"] = w.name;            // use "title" not "name"
+  doc["title"] = w.name;           // use "title" not "name"
   JsonArray arr = doc.createNestedArray("swims");   // "swims" key
   for (auto &s : w.steps) {
     JsonObject o = arr.createNestedObject();
@@ -34,7 +44,12 @@ String WorkoutStorage::to_json(const Workout &w) {
 }
 
 bool WorkoutStorage::from_json(const uint8_t *data, size_t len, Workout &w) {
-  StaticJsonDocument<2048> doc;
+  // Allocate document on heap sized to input length (clamped)
+  size_t cap = len + 512;
+  if (cap < 1024) cap = 1024;
+  if (cap > 8192) cap = 8192;
+  DynamicJsonDocument doc(cap);
+
   auto err = deserializeJson(doc, data, len);
   if (err) {
     Serial.printf("JSON parse error: %s\n", err.c_str());

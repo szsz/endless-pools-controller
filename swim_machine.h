@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 #include <vector>
-#include <ESP8266WiFi.h>
+#include <WiFi.h>
 
 namespace SwimMachine
 {

@@ -2,8 +2,8 @@
 #include "workout_manager.h"
 #include "workout_storage.h"
 #include <ArduinoJson.h>
-#include <ESP8266WiFi.h>
-#include <ESP8266mDNS.h>
+#include <WiFi.h>
+#include <ESPmDNS.h>
 
 
 using namespace WebUI;
@@ -12,7 +12,6 @@ using namespace WorkoutStorage;
 static AsyncWebServer server(80);
 static AsyncEventSource sse("/events");
 
-#include <EEPROM.h>
 
 String storedSSID;
 String storedPassword;
@@ -47,11 +46,11 @@ static void serve_index(AsyncWebServerRequest *req)
 
 void WebUI::begin()
 {
-    // Initialize LittleFS
-    if (!LittleFS.begin())
+    // Initialize LittleFS (format if mount fails), but do not abort networking
+    bool fsOk = LittleFS.begin(true, "/littlefs", 10, "spiffs");
+    if (!fsOk)
     {
-        Serial.println("Failed to mount LittleFS");
-        return;
+        Serial.println("Failed to mount/format LittleFS, continuing without FS");
     }
 
     // Read stored WiFi credentials from LittleFS file
@@ -209,7 +208,7 @@ void WebUI::begin()
         server.serveStatic("/static", LittleFS, "/static/");
 
         // list IDs
-        server.on("/api/workouts", HTTP_GET, [](auto *r)
+        server.on("/api/workouts", HTTP_GET, [](AsyncWebServerRequest *r)
                   {
             StaticJsonDocument<256> d;
             auto arr = d.to<JsonArray>();
@@ -221,7 +220,7 @@ void WebUI::begin()
         });
 
         // get one
-        server.on("/api/workout", HTTP_GET, [](auto *r)
+        server.on("/api/workout", HTTP_GET, [](AsyncWebServerRequest *r)
                   {
             String id;
             if (!require_id(r, id))
@@ -236,8 +235,8 @@ void WebUI::begin()
         });
 
         // save one
-        server.on("/api/workout", HTTP_POST, [](auto *r)
-                  { r->send(200); }, nullptr, [](auto *r, uint8_t *data, size_t len, size_t index, size_t total)
+        server.on("/api/workout", HTTP_POST, [](AsyncWebServerRequest *r)
+                  { r->send(200); }, nullptr, [](AsyncWebServerRequest *r, uint8_t *data, size_t len, size_t index, size_t total)
                   {
             static uint8_t g_buffer[maxJsonSize]; // for reading Json objects
             if (total > maxJsonSize)
@@ -259,7 +258,7 @@ void WebUI::begin()
         });
 
         // delete one
-        server.on("/api/workout", HTTP_DELETE, [](auto *r)
+        server.on("/api/workout", HTTP_DELETE, [](AsyncWebServerRequest *r)
                   {
             String id;
             if (!require_id(r, id))
@@ -273,26 +272,26 @@ void WebUI::begin()
         });
 
         // **UPDATED**: run only the specified workout
-        server.on("/api/run", HTTP_POST, [](auto *r)
+        server.on("/api/run", HTTP_POST, [](AsyncWebServerRequest *r)
                   {
             String id;
             if (!require_id(r, id))
                 return;
             if (!WorkoutManager::run(id))
             {
-                r->send(404, "could not start workout");
+                r->send(404, "text/plain", "could not start workout");
                 return;
             }
             r->send(200, "text/plain", "OK");
         });
 
         // pause & stop unchanged
-        server.on("/api/pause", HTTP_POST, [](auto *r)
+        server.on("/api/pause", HTTP_POST, [](AsyncWebServerRequest *r)
                   {
             WorkoutManager::pause();
             r->send(200);
         });
-        server.on("/api/stop", HTTP_POST, [](auto *r)
+        server.on("/api/stop", HTTP_POST, [](AsyncWebServerRequest *r)
                   {
             WorkoutManager::stop();
             r->send(200);
@@ -313,7 +312,6 @@ void WebUI::loop()
         t0 = millis();
         push_event("ping", "{}");
         push_event("ping", "{}");
-        MDNS.update();
     }
 }
 
