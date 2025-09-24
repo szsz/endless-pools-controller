@@ -4,6 +4,9 @@
 #include <ArduinoJson.h>
 #include <WiFi.h>
 #include <ESPmDNS.h>
+#include <ETH.h>
+#include <SPI.h>
+#include "driver/spi_master.h"
 
 
 using namespace WebUI;
@@ -11,6 +14,60 @@ using namespace WorkoutStorage;
 
 static AsyncWebServer server(80);
 static AsyncEventSource sse("/events");
+
+/*************** W5500 (Ethernet) Pins & MAC ***************/
+#define W5500_CS    14  // Chip Select
+#define W5500_RST    9  // Reset (optional but recommended)
+#define W5500_INT   10  // Interrupt (unused by this sketch)
+#define W5500_MISO  12
+#define W5500_MOSI  11
+#define W5500_SCK   13
+#define ETH_SPI_HOST SPI2_HOST
+
+static void makeEthMac(uint8_t mac[6]) {
+    uint64_t base = ESP.getEfuseMac();
+    mac[0] = 0x02; // locally administered
+    mac[1] = (base >> 32) & 0xFF;
+    mac[2] = (base >> 24) & 0xFF;
+    mac[3] = (base >> 16) & 0xFF;
+    mac[4] = (base >> 8) & 0xFF;
+    mac[5] = base & 0xFF;
+}
+
+static bool startEthernet() {
+    // Reset W5500
+    pinMode(W5500_RST, OUTPUT);
+    digitalWrite(W5500_RST, LOW);
+    delay(10);
+    digitalWrite(W5500_RST, HIGH);
+    delay(100);
+
+    // Start SPI with provided pins
+    SPI.begin(W5500_SCK, W5500_MISO, W5500_MOSI);
+
+    // Bring up W5500 via Arduino-ESP32 ETH driver (SPI W5500)
+    ETH.setHostname("swimmachine");
+    bool ok = ETH.begin(ETH_PHY_W5500, W5500_CS, W5500_INT, W5500_RST, ETH_SPI_HOST, W5500_SCK, W5500_MISO, W5500_MOSI);
+    if (!ok) {
+        Serial.println("ETH.begin(W5500) failed");
+        return false;
+    }
+
+
+    // Wait for link + DHCP
+    uint32_t t0 = millis();
+    while (millis() - t0 < 10000) { // 10s
+        if (ETH.linkUp()) {
+            IPAddress ip = ETH.localIP();
+            if (ip[0] != 0 || ip[1] != 0 || ip[2] != 0 || ip[3] != 0) {
+                return true;
+            }
+        }
+        delay(100);
+    }
+    Serial.println("Ethernet link/DHCP timeout");
+    return false;
+}
 
 
 String storedSSID;
@@ -72,7 +129,22 @@ void WebUI::begin()
         }
     }
 
-    WiFi.mode(WIFI_STA);
+    bool ethReady = startEthernet();
+
+    if (ethReady) {
+        Serial.printf("\nEthernet connected, IP = %s\n", ETH.localIP().toString().c_str());
+        // Start mDNS responder for hostname.local
+        if (MDNS.begin("swimmachine")) {
+            Serial.println("mDNS responder started: http://swimmachine.local");
+        } else {
+            Serial.println("Error setting up mDNS responder!");
+        }
+        // Disable WiFi to route all traffic through Ethernet
+        WiFi.mode(WIFI_OFF);
+    }
+
+    if (!ethReady) {
+        WiFi.mode(WIFI_STA);
     WiFi.setHostname("swimmachine"); // Set the device hostname
 
     // Try to connect to stored WiFi credentials if available, else default from file
@@ -177,8 +249,10 @@ void WebUI::begin()
         server.begin();
     }
 
+    }
+    
     // routes for normal operation (only if connected)
-    if (WiFi.status() == WL_CONNECTED)
+    if (ethReady || WiFi.status() == WL_CONNECTED)
     {
         server.on("/run.html", HTTP_GET, [](AsyncWebServerRequest *req)
                   {
