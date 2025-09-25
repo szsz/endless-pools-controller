@@ -8,3 +8,8 @@ CONFIG_ETH_SPI_ETHERNET_W5500=y
 
 # Optional: mDNS robustness (not required)
 # CONFIG_MDNS_MAX_SERVICES=10
+
+# Panic behavior: print full backtrace and halt (easier to capture/inspect)
+CONFIG_ESP_SYSTEM_PANIC_PRINT_HALT=y
+# Alternative: enter GDB stub on panic (uncomment if you want to attach GDB on crash)
+# CONFIG_ESP_SYSTEM_PANIC_GDBSTUB=y

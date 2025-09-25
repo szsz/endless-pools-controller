@@ -1,6 +1,11 @@
-#include <WiFi.h>
 #include "swim_machine.h"
+#include "network.h"
+#ifdef ETHERNET
+#include <EthernetUdp.h>
+#define WiFiUDP EthernetUDP
+#else
 #include <WiFiUdp.h>
+#endif
 #include <vector>
 
 /* ------------ internal state ----------------------------------- */
@@ -37,11 +42,8 @@ void setupBroadcast()
 {
   if (broadcastReady) return;
 
-  // Only start sockets when WiFi/LWIP is ready (STA connected or AP active)
-  wifi_mode_t m = WiFi.getMode();
-  bool staReady = (m & WIFI_MODE_STA) && (WiFi.status() == WL_CONNECTED);
-  bool apReady  = (m & WIFI_MODE_AP) && (WiFi.softAPIP() != IPAddress(0,0,0,0));
-  if (!(staReady || apReady))
+  // Only start sockets when network is ready (either Ethernet link up or WiFi connected)
+  if (!Network::connected())
   {
     return; // try again later from tick()
   }

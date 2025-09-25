@@ -1,12 +1,9 @@
 #pragma once
 
 #include <Arduino.h>
-#include <LittleFS.h>
-#include <AsyncTCP.h>
-#include <ESPAsyncWebServer.h>
 
 namespace WebUI {
-  /** Initialise Wi-Fi, LittleFS and register routes. */
+  /** Initialise filesystem and register HTTP routes (after network is up). */
   void begin();
 
   /** Call in loop() to drive SSE heartbeats. */

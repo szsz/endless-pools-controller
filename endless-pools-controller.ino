@@ -2,6 +2,7 @@
 #include "swim_machine.h"
 #include "workout_manager.h"
 #include "web_ui.h"
+#include "network.h"
 
 void setup()
 {
