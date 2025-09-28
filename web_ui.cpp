@@ -183,7 +183,6 @@ void WebUI::loop()
     {
         t0 = millis();
         push_event("ping", "{}");
-        push_event("ping", "{}");
     }
 }
 

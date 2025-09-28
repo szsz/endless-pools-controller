@@ -1,16 +1,16 @@
 #pragma once
 
 #include <Arduino.h>
-#ifdef ETHERNET
-#include <AsyncWebServer_ESP32_W5500.h>
-#else
 #include <ESPAsyncWebServer.h>
-#endif
+
+// Simple network facade built on ConnectionManager/NetworkSetup.
+// Provides a shared AsyncWebServer and AsyncEventSource (SSE).
 namespace Network {
-  // Initialize Ethernet/WiFi and mDNS. In AP mode, starts a captive portal.
+
+  // Initialize networking (Ethernet/WiFi/SoftAP via ConnectionManager) and basic captive portal.
   void begin();
 
-  // True if either Ethernet link is up or WiFi is connected.
+  // True if either Ethernet or WiFi STA has an IP.
   bool connected();
 
   // Access the shared AsyncWebServer instance to register routes.
@@ -19,4 +19,4 @@ namespace Network {
   // Access the shared AsyncEventSource (SSE) instance for event pushing.
   AsyncEventSource& events();
 
-}
+} // namespace Network

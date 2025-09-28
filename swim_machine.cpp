@@ -1,11 +1,6 @@
 #include "swim_machine.h"
-#include "network.h"
-#ifdef ETHERNET
-#include <EthernetUdp.h>
-#define WiFiUDP EthernetUDP
-#else
-#include <WiFiUdp.h>
-#endif
+#include "UDPEventSender.h"
+#include "NetworkSetup.h"
 #include <vector>
 
 /* ------------ internal state ----------------------------------- */
@@ -25,43 +20,21 @@ namespace
     bool active = false;
     bool paused = false;
   } sim;
-
 }
 
-/* ------------ machine address / UDP ----------------------------- */
+/* ------------ multicast/control via UDPEventSender -------------- */
 
-WiFiUDP multicastUDP;
 const IPAddress multicastAddr(239, 255, 0, 1);
 const uint16_t multicastPort = 45654;
-static WiFiUDP udp;
+
 static IPAddress peer_ip(255, 255, 255, 255);
 static uint16_t PEER_PORT = 9750;
-static bool broadcastReady = false;
 
-void setupBroadcast()
-{
-  if (broadcastReady) return;
-
-  // Only start sockets when network is ready (either Ethernet link up or WiFi connected)
-  if (!Network::connected())
-  {
-    return; // try again later from tick()
-  }
-
-  udp.begin(0); // allocate UDP PCB
-  if (!multicastUDP.beginMulticast(multicastAddr, multicastPort))
-  {
-    // failed to join multicast (e.g. interface not ready) – retry later
-    return;
-  }
-
-  broadcastReady = true;
-}
-
-void SwimMachine::setPeerIP(IPAddress ip)
-{
-  peer_ip = ip;
-}
+// Two UDPEventSender instances:
+// - mcast: joined to multicast group for incoming status/acks
+// - ctrl:  unicast/broadcast for control commands to the swim machine
+static UDPEventSender mcast(multicastAddr, multicastPort);
+static UDPEventSender ctrl(peer_ip, PEER_PORT);
 
 /* ------------ helpers: CRC-32 & monotonic tick ------------------ */
 static uint32_t crc32(const uint8_t *d, size_t n)
@@ -71,7 +44,7 @@ static uint32_t crc32(const uint8_t *d, size_t n)
   {
     c ^= *d++;
     for (int k = 0; k < 8; ++k)
-      c = c & 1 ? (c >> 1) ^ 0xEDB88320 : c >> 1;
+      c = (c & 1) ? (c >> 1) ^ 0xEDB88320 : (c >> 1);
   }
   return ~c;
 }
@@ -85,6 +58,7 @@ static uint32_t monoTick()
   return last;
 }
 
+/* ------------ send queue and flow control ----------------------- */
 static uint16_t messagequeue[16];
 static uint16_t *nextmessagetosend = messagequeue;
 static uint16_t *nextmessage = messagequeue;
@@ -94,70 +68,17 @@ static uint8_t idx2Counter = 0xC5;  // so first increment is 0x64
 static bool readyToSendNext = true;
 static bool resendLastPacket = false;
 
-uint16_t broadcast_counter = 0;
-uint8_t broadcast_buffer[128];
-
-static void sendPkt()
+static void queuePkt(uint16_t command, uint16_t param = 0)
 {
-  if (nextmessagetosend == nextmessage)
-    return;
-  if (broadcast_buffer[3] == 0x4E || broadcast_buffer[3] == 0x0E || broadcast_buffer[3] == 0x4A || broadcast_buffer[3] == 0x0A) // do not send message when turning off or slowing down
-    return;
-
-  // Only send if ready or if a resend is required
-  if (!readyToSendNext && !resendLastPacket)
-    return;
-
-  uint16_t command = *nextmessagetosend;
-  uint16_t param = *(nextmessagetosend + 1);
-
-  uint8_t idx2;
-  if (resendLastPacket)
-  {
-    // For resend, use the last sent idx2
-    idx2 = lastSentIdx2;
-  }
-  else
-  {
-    // For new packet, increment idx2Counter and wrap in [0x64, 0xC6]
-    idx2Counter++;
-    if (idx2Counter > 0xC6)
-      idx2Counter = 0x64;
-    if (idx2Counter < 0x64)
-      idx2Counter = 0x64;
-    idx2 = idx2Counter;
-  }
-
-  // Prepare packet
-  uint8_t b[44];
-  memset(b, 0, sizeof b); // clear all bytes in buffer to 0x
-  b[0] = 0x0A;            // header
-  b[1] = 0xF0;
-  b[36] = 0x97; // footer
-  b[37] = 0x01;
-  b[2] = idx2;
-  b[3] = command & 0xFF;
-  b[4] = param & 0xFF;
-  b[5] = param >> 8;
-  uint32_t t = monoTick();
-  memcpy(b + 32, &t, 4);
-  uint32_t c = crc32(b, 40);
-  memcpy(b + 40, &c, 4);
-
-  udp.beginPacket(peer_ip, PEER_PORT);
-  udp.write(b, sizeof b);
-  udp.endPacket();
-
-  if (push_network_event_func)
-    push_network_event_func(b, sizeof b);
-
-  // Update state
-  lastSentIdx2 = idx2;
-  readyToSendNext = false;
-  resendLastPacket = false;
+  *nextmessage = command;
+  nextmessage++;
+  *nextmessage = param;
+  nextmessage++;
+  if (nextmessage - messagequeue >= (int)(sizeof(messagequeue) / sizeof(*messagequeue)))
+    nextmessage = messagequeue;
 }
 
-void confirmPacket(uint8_t idx2)
+static void confirmPacket(uint8_t idx2)
 {
   if (readyToSendNext)
     return;
@@ -171,9 +92,8 @@ void confirmPacket(uint8_t idx2)
     lastReceivedIdx2 = idx2;
     readyToSendNext = true;
     resendLastPacket = false;
-    nextmessagetosend++;
-    nextmessagetosend++;
-    if (nextmessagetosend - messagequeue >= sizeof(messagequeue) / sizeof(*messagequeue))
+    nextmessagetosend += 2;
+    if (nextmessagetosend - messagequeue >= (int)(sizeof(messagequeue) / sizeof(*messagequeue)))
       nextmessagetosend = messagequeue;
   }
   else
@@ -186,49 +106,6 @@ void confirmPacket(uint8_t idx2)
       consecutiveMisses = 0;
     }
   }
-}
-
-void loopBroadcastListener()
-{
-  int packetSize = multicastUDP.parsePacket();
-  if (packetSize)
-  {
-    int len = multicastUDP.read(broadcast_buffer, sizeof(broadcast_buffer));
-    // Only process packets that are exactly 111 bytes long
-    if (len == 111)
-    {
-      broadcast_counter++;
-      confirmPacket(broadcast_buffer[2]);
-
-      if (push_network_event_func)
-        push_network_event_func(broadcast_buffer, len);
-    }
-    else
-    {
-      // Discard packets not 111 bytes long
-      return;
-    }
-    if (len == 111 && !machineFound)
-    {
-      lastSentIdx2 = broadcast_buffer[2] + 1;
-      IPAddress sender = multicastUDP.remoteIP();
-      // SwimMachine::setPeerIP(sender);
-
-      Serial.printf("Swim machine found at IP: %s\n", sender.toString().c_str());
-      machineFound = true;
-    }
-  }
-}
-
-/* ------------ raw packet emitter ------------------------------- */
-static void queuePkt(uint16_t command, uint16_t param = 0)
-{
-  *nextmessage = command;
-  nextmessage++;
-  *nextmessage = param;
-  nextmessage++;
-  if (nextmessage - messagequeue >= sizeof(messagequeue) / sizeof(*messagequeue))
-    nextmessage = messagequeue;
 }
 
 /* ------------ high-level opcodes ------------------------------- */
@@ -261,13 +138,106 @@ void motorStop()
   }
 }
 
+/* ------------ raw packet emitter ------------------------------- */
+static void sendPkt()
+{
+  if (nextmessagetosend == nextmessage)
+    return;
+
+  // do not send message when turning off or slowing down
+  if (/* command byte */ ((uint8_t)(*nextmessagetosend & 0xFF) == 0x4E) ||
+      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x0E) ||
+      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x4A) ||
+      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x0A))
+    return;
+
+  // Only send if ready or if a resend is required
+  if (!readyToSendNext && !resendLastPacket)
+    return;
+
+  uint16_t command = *nextmessagetosend;
+  uint16_t param = *(nextmessagetosend + 1);
+
+  uint8_t idx2;
+  if (resendLastPacket)
+  {
+    // For resend, use the last sent idx2
+    idx2 = lastSentIdx2;
+  }
+  else
+  {
+    // For new packet, increment idx2Counter and wrap in [0x64, 0xC6]
+    idx2Counter++;
+    if (idx2Counter > 0xC6)
+      idx2Counter = 0x64;
+    if (idx2Counter < 0x64)
+      idx2Counter = 0x64;
+    idx2 = idx2Counter;
+  }
+
+  // Prepare packet
+  uint8_t b[44];
+  memset(b, 0, sizeof b);
+  b[0] = 0x0A; // header
+  b[1] = 0xF0;
+  b[36] = 0x97; // footer
+  b[37] = 0x01;
+  b[2] = idx2;
+  b[3] = command & 0xFF;
+  b[4] = param & 0xFF;
+  b[5] = param >> 8;
+  uint32_t t = monoTick();
+  memcpy(b + 32, &t, 4);
+  uint32_t c = crc32(b, 40);
+  memcpy(b + 40, &c, 4);
+
+  // Send via UDPEventSender (control socket)
+  (void)ctrl.sendBytes(b, sizeof b);
+
+  if (push_network_event_func)
+    push_network_event_func(b, sizeof b);
+
+  // Update state
+  lastSentIdx2 = idx2;
+  readyToSendNext = false;
+  resendLastPacket = false;
+}
+
 /* =================================================================
  *                    P U B L I C   A P I
  * ================================================================= */
 void SwimMachine::begin(void (*push_network_event)(const uint8_t *data, size_t len))
 {
-  // Defer network socket setup until WiFi is ready (done lazily in tick())
   push_network_event_func = push_network_event;
+
+  // Subscribe UDP senders to connection changes so they rebind automatically
+  g_conn.subscribe([](bool ethHasIp, bool wifiHasIp, bool softApActive) {
+    mcast.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
+    ctrl.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
+  });
+
+  // Join multicast group to receive status/acks
+  mcast.onReceive([](const uint8_t *data, size_t len, const IPAddress &remote, uint16_t rport) {
+    // Process only expected 111-byte packets
+    if (len == 111)
+    {
+      confirmPacket(data[2]);
+
+      if (push_network_event_func)
+        push_network_event_func(data, len);
+
+      if (!machineFound)
+      {
+        lastSentIdx2 = data[2] + 1;
+        Serial.printf("Swim machine found at IP: %s\n", remote.toString().c_str());
+        machineFound = true;
+      }
+    }
+  });
+
+  // Initialize sockets (rebinding handled by connection changes)
+  mcast.begin(multicastAddr, multicastPort, 45654); // bind to group port
+  ctrl.begin(peer_ip, PEER_PORT, 40000);            // distinct local port to avoid conflict
 }
 
 /* deep-copy caller’s data so it can go out of scope */
@@ -340,13 +310,12 @@ void SwimMachine::stop()
 /* --------------------------------------------------------------- */
 void SwimMachine::tick()
 {
-  // Lazily initialize multicast/UDP once networking is ready
-  if (!broadcastReady) setupBroadcast();
-  if (broadcastReady)
-  {
-    loopBroadcastListener();
-    sendPkt();
-  }
+  // Process UDP (receives multicast acks and keeps sockets rebound)
+  mcast.loop();
+  ctrl.loop();
+
+  // Attempt send if ready
+  sendPkt();
 
   if (!sim.active || sim.paused)
     return;
@@ -390,6 +359,7 @@ SwimMachine::SwimStatus SwimMachine::getStatus()
 {
   SwimMachine::SwimStatus st;
   st.active = sim.active;
+  st.found = machineFound;
   st.paused = sim.paused;
   st.idx = sim.idx;
   const uint32_t lag = 1000;
@@ -397,9 +367,14 @@ SwimMachine::SwimStatus SwimMachine::getStatus()
   return st;
 }
 
-static SwimMachine::SwimStatus latestStatus = {};
-
 bool SwimMachine::isMachineFound()
 {
   return machineFound;
+}
+
+void SwimMachine::setPeerIP(IPAddress ip)
+{
+  peer_ip = ip;
+  // Reconfigure control sender to new peer (keep distinct local port)
+  ctrl.begin(peer_ip, PEER_PORT, 40000);
 }

@@ -3,6 +3,7 @@
 #include "workout_manager.h"
 #include "web_ui.h"
 #include "network.h"
+#include "NetworkSetup.h"
 
 void setup()
 {
@@ -20,8 +21,9 @@ void setup()
 
 void loop()
 {
+  g_conn.loop();             // enforce connection policy and SoftAP control
   WebUI::loop();             // handles AsyncEventSource pings
   WorkoutManager::tick();    // 1 Hz countdown
-  SwimMachine::tick();    // drive swim-machine protocol
+  SwimMachine::tick();       // drive swim-machine protocol
   delay(250);
 }
