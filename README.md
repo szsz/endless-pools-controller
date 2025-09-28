@@ -14,6 +14,7 @@ Note: I am not affiliated with Endless Pools.
   - [Option A: PlatformIO (recommended)](#option-a-platformio-recommended)
   - [Option B: Arduino IDE](#option-b-arduino-ide)
 - [Uploading Data Files (Web UI, Workouts, etc.)](#uploading-data-files-web-ui-workouts-etc)
+- [Over-the-Air (OTA) Updates](#over-the-air-ota-updates)
 - [User Manual](#user-manual)
   - [WiFi Setup](#wifi-setup)
   - [Connecting to the Webserver](#connecting-to-the-webserver)
@@ -121,10 +122,13 @@ Build and upload
 - Click Upload
 
 Upload data (LittleFS)
-- Option 1 (Recommended for Arduino IDE): Use the ESP32 LittleFS Uploader plugin:
+- Option 1 (Arduino IDE 2.x, recommended): Arduino LittleFS Upload tool by Earle Philhower
+  - https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file
+  - After installing, use the new LittleFS Upload menu under Tools to upload the contents of `data/` to LittleFS.
+- Option 2: ESP32 LittleFS Uploader plugin (lorol)
   - https://github.com/lorol/arduino-esp32fs-plugin
   - After installing, use Tools > ESP32 Sketch Data Upload to upload `data/` to LittleFS.
-- Option 2: Temporarily use PlatformIO just for uploadfs (see PlatformIO steps above).
+- Option 3: Temporarily use PlatformIO just for uploadfs (see PlatformIO steps above).
 
 ---
 
@@ -137,7 +141,49 @@ Where are the files?
 
 How to upload to the device?
 - PlatformIO: `pio run -t uploadfs`
-- Arduino IDE: Tools > ESP32 Sketch Data Upload (requires the ESP32 FS plugin linked above)
+- Arduino IDE:
+  - Arduino LittleFS Upload tool (Arduino IDE 2.x, recommended): https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file
+    - Use the LittleFS Upload menu under Tools to upload the contents of `data/` to the device.
+  - ESP32 LittleFS Uploader plugin (lorol): https://github.com/lorol/arduino-esp32fs-plugin
+    - Use Tools > ESP32 Sketch Data Upload to upload `data/` to LittleFS.
+
+## Over-the-Air (OTA) Updates
+
+Arduino OTA is built into the firmware and enabled at boot.
+
+Defaults
+- Hostname: swimmachine
+- Port: 3232
+- Password: defined in local otapassword.h (not committed)
+
+Requirements
+- The device must have an IP on your LAN (Wi‑Fi STA or Ethernet).
+- Your computer must be on the same network.
+
+Local secret setup
+Create a file named otapassword.h at the project root with:
+```c++
+#pragma once
+#define OTA_PASSWORD "REPLACE_WITH_A_LONG_RANDOM_SECRET"
+```
+Ensure otapassword.h is listed in .gitignore so it is not committed.
+
+Arduino IDE (recommended)
+1. Power the device and wait for it to connect to the network.
+2. In Arduino IDE: Tools > Port, select the Network Port for swimmachine (or the device’s IP).
+3. Click Upload. When prompted for a password, enter the value of OTA_PASSWORD from your local otapassword.h.
+4. The device will report progress over the network and reboot when done.
+
+Command-line (espota.py)
+- You can use Espressif’s espota.py script to upload a compiled binary:
+  - Export/compile a .bin (Arduino IDE: Sketch > Export Compiled Binary).
+  - Then run:
+    python espota.py -i DEVICE_IP -p 3232 --auth=YOUR_OTA_PASSWORD -f PATH_TO_BINARY.bin
+  - espota.py is bundled with the Arduino ESP32 core and PlatformIO toolchains. Adjust the path if needed.
+
+Notes
+- OTA also prints progress to the serial log (115200). You’ll see “OTA: Start”, periodic progress, then “OTA: End”.
+- If mDNS is available on your network, you can reach the device by swimmachine.local; otherwise use its IP address.
 
 ---
 

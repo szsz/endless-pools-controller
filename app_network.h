@@ -5,7 +5,7 @@
 
 // Simple network facade built on ConnectionManager/NetworkSetup.
 // Provides a shared AsyncWebServer and AsyncEventSource (SSE).
-namespace Network {
+namespace AppNetwork {
 
   // Initialize networking (Ethernet/WiFi/SoftAP via ConnectionManager) and basic captive portal.
   void begin();
@@ -19,4 +19,4 @@ namespace Network {
   // Access the shared AsyncEventSource (SSE) instance for event pushing.
   AsyncEventSource& events();
 
-} // namespace Network
+} // namespace AppNetwork

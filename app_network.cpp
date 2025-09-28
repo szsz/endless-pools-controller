@@ -1,4 +1,4 @@
-#include "network.h"
+#include "app_network.h"
 #include "NetworkSetup.h"
 
 
@@ -6,7 +6,7 @@
 static AsyncWebServer g_server(80);
 static AsyncEventSource g_sse("/events");
 
-namespace Network
+namespace AppNetwork
 {
 
 static void addCaptivePortalRoutes()
@@ -41,17 +41,6 @@ static void addCaptivePortalRoutes()
       req->send(400, "text/plain", "Missing SSID or password");
     } });
 
-  g_server.onNotFound([](AsyncWebServerRequest *req)
-                      { 
-                        if(g_conn.softApActive())
-                        {
-                          req->redirect("/wifi"); 
-                        }
-                        else
-                        {                          
-                          req->redirect("/"); 
-                        }
-                      });
 }
 
 void begin()
@@ -64,7 +53,6 @@ void begin()
   if (!(g_conn.ethHasIp() || g_conn.wifiHasIp()))
   {
     addCaptivePortalRoutes();
-    g_server.begin();
   }
 }
 
@@ -83,4 +71,4 @@ AsyncEventSource &events()
   return g_sse;
 }
 
-} // namespace Network
+} // namespace AppNetwork

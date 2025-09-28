@@ -1,7 +1,8 @@
 #include "web_ui.h"
 #include "workout_manager.h"
 #include "workout_storage.h"
-#include "network.h"
+#include "app_network.h"
+#include "NetworkSetup.h"
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 
@@ -30,6 +31,13 @@ static bool require_id(AsyncWebServerRequest *r, String &id)
 
 static void serve_index(AsyncWebServerRequest *req)
 {
+    // When SoftAP is active, redirect to Wi-Fi setup page
+    if (g_conn.softApActive())
+    {
+        req->redirect("/wifi");
+        return;
+    }
+
     if (LittleFS.exists("/index.html"))
         req->send(LittleFS, "/index.html", "text/html");
     else
@@ -46,15 +54,12 @@ void WebUI::begin()
     }
 
     // Bring up networking (WiFi/Ethernet/mDNS/AP portal handled inside Network)
-    Network::begin();
+    AppNetwork::begin();
 
-    // Register routes for normal operation only if connected in STA/Ethernet mode.
-    if (Network::connected())
-    {
-        auto &server = Network::server();
+    auto &server = AppNetwork::server();
 
-        server.on("/run.html", HTTP_GET, [](AsyncWebServerRequest *req)
-                  {
+    server.on("/run.html", HTTP_GET, [](AsyncWebServerRequest *req)
+              {
             if (LittleFS.exists("/run.html"))
             {
                 req->send(LittleFS, "/run.html", "text/html");
@@ -62,11 +67,10 @@ void WebUI::begin()
             else
             {
                 req->send(404, "text/plain", "Upload run.html");
-            }
-        });
+            } });
 
-        server.on("/status.html", HTTP_GET, [](AsyncWebServerRequest *req)
-                  {
+    server.on("/status.html", HTTP_GET, [](AsyncWebServerRequest *req)
+              {
             if (LittleFS.exists("/status.html"))
             {
                 req->send(LittleFS, "/status.html", "text/html");
@@ -74,27 +78,25 @@ void WebUI::begin()
             else
             {
                 req->send(404, "text/plain", "Upload status.html");
-            }
-        });
+            } });
 
-        server.on("/", HTTP_GET, serve_index);
-        server.serveStatic("/static", LittleFS, "/static/");
+    server.on("/", HTTP_GET, serve_index);
+    server.serveStatic("/static", LittleFS, "/static/");
 
-        // list IDs
-        server.on("/api/workouts", HTTP_GET, [](AsyncWebServerRequest *r)
-                  {
+    // list IDs
+    server.on("/api/workouts", HTTP_GET, [](AsyncWebServerRequest *r)
+              {
             StaticJsonDocument<256> d;
             auto arr = d.to<JsonArray>();
             for (auto id : list_ids())
                 arr.add(id);
             String out;
             serializeJson(d, out);
-            send_json(r, out);
-        });
+            send_json(r, out); });
 
-        // get one
-        server.on("/api/workout", HTTP_GET, [](AsyncWebServerRequest *r)
-                  {
+    // get one
+    server.on("/api/workout", HTTP_GET, [](AsyncWebServerRequest *r)
+              {
             String id;
             if (!require_id(r, id))
                 return;
@@ -104,13 +106,12 @@ void WebUI::begin()
                 r->send(404);
                 return;
             }
-            send_json(r, to_json(w));
-        });
+            send_json(r, to_json(w)); });
 
-        // save one
-        server.on("/api/workout", HTTP_POST, [](AsyncWebServerRequest *r)
-                  { r->send(200); }, nullptr, [](AsyncWebServerRequest *r, uint8_t *data, size_t len, size_t index, size_t total)
-                  {
+    // save one
+    server.on("/api/workout", HTTP_POST, [](AsyncWebServerRequest *r)
+              { r->send(200); }, nullptr, [](AsyncWebServerRequest *r, uint8_t *data, size_t len, size_t index, size_t total)
+              {
             static uint8_t g_buffer[maxJsonSize]; // for reading Json objects
             if (total > maxJsonSize)
             {
@@ -127,12 +128,11 @@ void WebUI::begin()
                 return;
             }
             save(w);
-            send_json(r, to_json(w));
-        });
+            send_json(r, to_json(w)); });
 
-        // delete one
-        server.on("/api/workout", HTTP_DELETE, [](AsyncWebServerRequest *r)
-                  {
+    // delete one
+    server.on("/api/workout", HTTP_DELETE, [](AsyncWebServerRequest *r)
+              {
             String id;
             if (!require_id(r, id))
                 return;
@@ -141,12 +141,11 @@ void WebUI::begin()
                 r->send(404);
                 return;
             }
-            r->send(200);
-        });
+            r->send(200); });
 
-        // run only the specified workout
-        server.on("/api/run", HTTP_POST, [](AsyncWebServerRequest *r)
-                  {
+    // run only the specified workout
+    server.on("/api/run", HTTP_POST, [](AsyncWebServerRequest *r)
+              {
             String id;
             if (!require_id(r, id))
                 return;
@@ -155,25 +154,21 @@ void WebUI::begin()
                 r->send(404, "text/plain", "could not start workout");
                 return;
             }
-            r->send(200, "text/plain", "OK");
-        });
+            r->send(200, "text/plain", "OK"); });
 
-        // pause & stop unchanged
-        server.on("/api/pause", HTTP_POST, [](AsyncWebServerRequest *r)
-                  {
+    // pause & stop unchanged
+    server.on("/api/pause", HTTP_POST, [](AsyncWebServerRequest *r)
+              {
             WorkoutManager::pause();
-            r->send(200);
-        });
-        server.on("/api/stop", HTTP_POST, [](AsyncWebServerRequest *r)
-                  {
+            r->send(200); });
+    server.on("/api/stop", HTTP_POST, [](AsyncWebServerRequest *r)
+              {
             WorkoutManager::stop();
-            r->send(200);
-        });
+            r->send(200); });
 
-        // SSE
-        server.addHandler(&Network::events());
-        server.begin();
-    }
+    // SSE
+    server.addHandler(&AppNetwork::events());
+    server.begin();
 }
 
 void WebUI::loop()
@@ -188,7 +183,7 @@ void WebUI::loop()
 
 void WebUI::push_event(const char *e, const char *j)
 {
-    Network::events().send(j, e);
+    AppNetwork::events().send(j, e);
 }
 
 void WebUI::push_network_event(const uint8_t *data, size_t len)
@@ -206,5 +201,5 @@ void WebUI::push_network_event(const uint8_t *data, size_t len)
     // Send hex string as JSON string
     String json = String("{\"packet\":\"") + hexStr + "\"}";
 
-    Network::events().send(json.c_str(), "network");
+    AppNetwork::events().send(json.c_str(), "network");
 }
