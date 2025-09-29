@@ -301,8 +301,9 @@ private:
         WiFi.softAP(m_softApSsid.c_str(), m_softApPass.c_str());
         setSoftApActive(true);
         printWifiMode();
-        Serial.println("SoftAP up: SSID=%s IP=%s\n",
+        Serial.printf("SoftAP up: SSID=%s IP=%s\n",
                       m_softApSsid.c_str(), WiFi.softAPIP().toString().c_str());
+        Serial.println();
       }
   }
 
@@ -328,9 +329,9 @@ private:
         WiFi.enableSTA(true);
         WiFi.begin(m_staSsid.c_str(), m_staPass.c_str());
         printWifiMode();
-        m_forceSTAUntil = millis()+5000;
-        Serial.println("STA started: SSID=%s",
+        Serial.printf("STA started: SSID=%s",
                       m_staSsid.c_str());
+        Serial.println();
       }
   }
 

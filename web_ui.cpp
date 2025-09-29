@@ -196,8 +196,7 @@ void WebUI::begin()
                 return;
             }
             uint32_t sec = r->getParam("seconds")->value().toInt();
-            uint64_t ms64 = (uint64_t)sec * 1000ull;
-            uint32_t ms = ms64 > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)ms64;
+            uint32_t ms = sec * 1000u;
             g_conn.forceSoftAP(ms);
             r->send(200, "text/plain", "OK"); });
 
@@ -209,8 +208,7 @@ void WebUI::begin()
                 return;
             }
             uint32_t sec = r->getParam("seconds")->value().toInt();
-            uint64_t ms64 = (uint64_t)sec * 1000ull;
-            uint32_t ms = ms64 > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)ms64;
+            uint32_t ms = sec * 1000ull;
             g_conn.forceSTA(ms);
             r->send(200, "text/plain", "OK"); });
 
