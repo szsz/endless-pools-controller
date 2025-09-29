@@ -1,8 +1,11 @@
 # Endless Pools Controller (ESP32-S3)
 
-An ESP32-S3-based controller for a swim machine, featuring a web-based user interface, programmable workouts, and WiFi connectivity. This project allows you to manage, run, and monitor swim workouts from your phone or computer.
+An ESP32-S3-based controller for a swim machine, featuring a web-based user interface, programmable workouts, and WiFi/Ethernet connectivity. This project allows you to manage, run, and monitor swim workouts from your phone or computer.
 
 Note: I am not affiliated with Endless Pools.
+
+Tested hardware: Waveshare ESP32-S3-ETH (W5500 over SPI). See board details and pinouts on the Waveshare wiki:
+- https://www.waveshare.com/wiki/ESP32-S3-ETH
 
 ---
 
@@ -10,9 +13,9 @@ Note: I am not affiliated with Endless Pools.
 
 - [Introduction](#introduction)
 - [Swim Machine Protocol](#swim-machine-protocol)
-- [Deploying to ESP32-S3](#deploying-to-esp32-s3)
-  - [Option A: PlatformIO (recommended)](#option-a-platformio-recommended)
-  - [Option B: Arduino IDE](#option-b-arduino-ide)
+- [Deploying to ESP32-S3 (Arduino IDE/CLI)](#deploying-to-esp32-s3-arduino-idecli)
+  - [Arduino IDE (ESP32-S3-ETH settings)](#arduino-ide-esp32-s3-eth-settings)
+  - [Arduino CLI (FQBN and OTA)](#arduino-cli-fqbn-and-ota)
 - [Uploading Data Files (Web UI, Workouts, etc.)](#uploading-data-files-web-ui-workouts-etc)
 - [Over-the-Air (OTA) Updates](#over-the-air-ota-updates)
 - [User Manual](#user-manual)
@@ -32,7 +35,7 @@ Note: I am not affiliated with Endless Pools.
 
 This project is a smart controller for a swim machine, built on the ESP32-S3 microcontroller. It provides:
 - A web-based interface for configuring and running workouts.
-- WiFi connectivity for easy access from any device.
+- WiFi and Ethernet connectivity for easy access from any device.
 - Persistent storage of workouts and preferences.
 - Real-time monitoring and control of the swim machine.
 
@@ -62,73 +65,88 @@ The swim machine is controlled via a state machine and communicates over UDP. Th
 
 ---
 
-## Deploying to ESP32-S3
+## Deploying to ESP32-S3 (Arduino IDE/CLI)
 
-Hardware
-- ESP32-S3-based board (e.g., ESP32-S3-DevKitC-1 or similar).
+Hardware (tested)
+- Waveshare ESP32-S3-ETH (ESP32-S3R8 with 16MB flash, 8MB PSRAM, W5500 SPI Ethernet)
+  - SPI Ethernet (W5500) pins (per Waveshare docs):
+    - CS=GPIO14, RST=GPIO9, INT=GPIO10, SCK=GPIO13, MISO=GPIO12, MOSI=GPIO11
+  - Camera and other interfaces are available but not required for this project
 - Swim machine hardware (relay/motor control, sensors as needed).
-- USB cable.
+- USB Type‑C cable.
 
 Software (common)
-- Uses LittleFS for web UI and workout data storage.
+- Filesystem: LittleFS for web UI and workout data storage.
 - Web server: ESPAsyncWebServer + AsyncTCP (ESP32).
 - JSON: ArduinoJson.
 - mDNS: ESPmDNS (included with ESP32 Arduino core).
 
-The repository includes a PlatformIO configuration for ESP32-S3 with all dependencies.
+Note on Ethernet: This firmware uses the Arduino Ethernet support for SPI W5500 (ETH.h). No RMII/PHY configuration is needed for ESP32-S3-ETH since Ethernet is via W5500 on SPI. The default W5500 pin definitions in `ConnectionManager.h`/`NetworkSetup.h` match the Waveshare board:
+- ETH_TYPE=ETH_PHY_W5500
+- ETH_CS=14, ETH_IRQ=10, ETH_RST=9, ETH_SPI_SCK=13, ETH_SPI_MISO=12, ETH_SPI_MOSI=11
 
-### Option A: PlatformIO (recommended)
+Reference: https://www.waveshare.com/wiki/ESP32-S3-ETH
 
-Requirements
-- VS Code + PlatformIO extension.
-
-Steps
-1. Open the project folder in VS Code.
-2. platformio.ini is already provided (env: esp32-s3).
-3. Build:
-   - pio run
-4. Upload firmware:
-   - pio run -t upload
-5. Monitor serial:
-   - pio device monitor
-6. Upload web/data files (from the data/ directory) to LittleFS:
-   - pio run -t uploadfs
-
-Libraries (auto-installed via lib_deps)
-- ArduinoJson
-- ESPAsyncWebServer (ESP32 fork)
-- AsyncTCP (ESP32)
-
-Note: If your ESP32-S3 board needs native USB CDC, you can enable it by uncommenting ARDUINO_USB_CDC_ON_BOOT=1 in platformio.ini.
-
-### Option B: Arduino IDE
+### Arduino IDE (ESP32-S3-ETH settings)
 
 Requirements
 - Arduino IDE 2.x
-- ESP32 boards support by Espressif Systems (Boards Manager).
-  - In Board Manager, install “ESP32 by Espressif Systems”
+- ESP32 boards support by Espressif Systems (Boards Manager). Install “ESP32 by Espressif Systems” (2.0.12 or newer recommended per Waveshare docs).
 - Libraries (Library Manager or GitHub):
   - ArduinoJson
-  - ESP Async WebServer (ESP32-compatible)
+  - ESPAsyncWebServer (ESP32-compatible)
   - AsyncTCP (ESP32)
   - LittleFS (ESP32) support is included in the ESP32 core
 
 Board selection
-- Select your ESP32-S3 board (e.g., ESP32S3 Dev Module or matching DevKitC-1 variant).
+- Tools > Board > esp32 > ESP32S3 Dev Module
 
-Build and upload
+Recommended board options for Waveshare ESP32-S3-ETH:
+- USB Mode: Hardware CDC and JTAG
+- USB CDC On Boot: Enabled (needed if board exposes only USB CDC)
+- Flash Size: 16MB
+- Partition Scheme: Huge APP
+- PSRAM: OPI PSRAM (8MB)
+- CPU Frequency, Upload Speed: defaults are fine unless you need changes
+
+Build and upload (USB)
 - Open `endless-pools-controller.ino`
 - Select board and port
 - Click Upload
 
-Upload data (LittleFS)
-- Option 1 (Arduino IDE 2.x, recommended): Arduino LittleFS Upload tool by Earle Philhower
-  - https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file
-  - After installing, use the new LittleFS Upload menu under Tools to upload the contents of `data/` to LittleFS.
-- Option 2: ESP32 LittleFS Uploader plugin (lorol)
-  - https://github.com/lorol/arduino-esp32fs-plugin
-  - After installing, use Tools > ESP32 Sketch Data Upload to upload `data/` to LittleFS.
-- Option 3: Temporarily use PlatformIO just for uploadfs (see PlatformIO steps above).
+### Arduino CLI (FQBN and OTA)
+
+Project helpers included in this repo:
+- `sketch.yaml`: Defines default_fqbn and a profile `esp32s3-eth` with the required options.
+- `scripts/ota-upload.bat`: Windows helper to compile with Arduino CLI and upload via OTA using sketch.yaml (default_fqbn or an explicit profile).
+
+ESP32-S3 Dev Module FQBN (example)
+- The exact option keys can vary by ESP32 core version. A typical FQBN with the requested settings looks like:
+```
+esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=huge_app,PSRAM=opi
+```
+If Arduino CLI reports an error about options, run:
+```
+arduino-cli board details esp32:esp32:esp32s3
+```
+to list the supported option names for your installed core version, then adjust `sketch.yaml` accordingly (edit default_fqbn or the `esp32s3-eth` profile).
+
+Using the helper script (Windows)
+- Prerequisite: Install Arduino CLI and the ESP32 core (e.g. `arduino-cli core install esp32:esp32`).
+- Optional: Configure your WiFi/Ethernet so the device is reachable by hostname or IP (default OTA service port: 3232).
+- To compile and OTA upload in one step:
+```
+scripts\ota-upload.bat 192.168.1.50
+```
+- If your device advertises mDNS and your network supports it, you can use:
+```
+scripts\ota-upload.bat swimmachine.local
+```
+- Optionally select the explicit profile defined in `sketch.yaml`:
+```
+scripts\ota-upload.bat 192.168.1.50 esp32s3-eth
+```
+- The script uses `sketch.yaml` (default_fqbn or specified profile), builds to `build\arduino`, then uploads over the network using Arduino CLI’s OTA.
 
 ---
 
@@ -140,12 +158,13 @@ Where are the files?
 - Web UI files (`index.html`, `run.html`, `status.html`), static assets (`/static`), and workout JSON files (`/workouts`) are all placed in the `data/` directory at the repository root.
 
 How to upload to the device?
-- PlatformIO: `pio run -t uploadfs`
 - Arduino IDE:
   - Arduino LittleFS Upload tool (Arduino IDE 2.x, recommended): https://github.com/earlephilhower/arduino-littlefs-upload?tab=readme-ov-file
     - Use the LittleFS Upload menu under Tools to upload the contents of `data/` to the device.
   - ESP32 LittleFS Uploader plugin (lorol): https://github.com/lorol/arduino-esp32fs-plugin
     - Use Tools > ESP32 Sketch Data Upload to upload `data/` to LittleFS.
+
+---
 
 ## Over-the-Air (OTA) Updates
 
@@ -154,36 +173,53 @@ Arduino OTA is built into the firmware and enabled at boot.
 Defaults
 - Hostname: swimmachine
 - Port: 3232
-- Password: defined in local otapassword.h (not committed)
+- Password: defined in local `otapassword.h` (not committed)
 
 Requirements
 - The device must have an IP on your LAN (Wi‑Fi STA or Ethernet).
 - Your computer must be on the same network.
 
 Local secret setup
-Create a file named otapassword.h at the project root with:
+- Set `ota_password` in `sketch.yaml`. This value is passed to Arduino CLI for OTA and injected into the firmware at build time.
+  - WARNING: This stores a secret in plain text in your repo. Consider rotating it regularly or moving secrets to a private repo/CI environment.
+- Optional fallback for local builds: the code still contains `otapassword.h`. If no build-time `OTA_PASSWORD` is injected, the firmware falls back to the value from this header:
 ```c++
 #pragma once
+#ifndef OTA_PASSWORD
 #define OTA_PASSWORD "REPLACE_WITH_A_LONG_RANDOM_SECRET"
+#endif
 ```
-Ensure otapassword.h is listed in .gitignore so it is not committed.
 
-Arduino IDE (recommended)
+Arduino IDE
 1. Power the device and wait for it to connect to the network.
-2. In Arduino IDE: Tools > Port, select the Network Port for swimmachine (or the device’s IP).
-3. Click Upload. When prompted for a password, enter the value of OTA_PASSWORD from your local otapassword.h.
+2. In Arduino IDE: Tools > Port, select the Network Port for `swimmachine` (or the device’s IP).
+3. Click Upload. When prompted for a password, enter the value of `OTA_PASSWORD` from your local `otapassword.h`.
 4. The device will report progress over the network and reboot when done.
 
-Command-line (espota.py)
-- You can use Espressif’s espota.py script to upload a compiled binary:
-  - Export/compile a .bin (Arduino IDE: Sketch > Export Compiled Binary).
+Arduino CLI (Windows helper)
+- With `sketch.yaml` configured, compile and OTA upload in one step (uses `default_port` and `ota_password` from `sketch.yaml`):
+```
+scripts\ota-upload.bat
+```
+- You can also specify the target and/or profile explicitly:
+```
+scripts\ota-upload.bat swimmachine.local
+scripts\ota-upload.bat 192.168.1.50 esp32s3-eth
+```
+- The script reads `default_fqbn` / profile, `default_port`, and `ota_password` from `sketch.yaml`, injects `OTA_PASSWORD` at build time, builds to `build\arduino`, and uploads via Arduino CLI OTA.
+
+Command-line (espota.py, alternative)
+- You can also use Espressif’s `espota.py` script directly to upload a compiled binary:
+  - Export/compile a .bin (Arduino IDE: Sketch > Export Compiled Binary or use Arduino CLI build output).
   - Then run:
+    ```
     python espota.py -i DEVICE_IP -p 3232 --auth=YOUR_OTA_PASSWORD -f PATH_TO_BINARY.bin
-  - espota.py is bundled with the Arduino ESP32 core and PlatformIO toolchains. Adjust the path if needed.
+    ```
+  - `espota.py` is bundled with the Arduino ESP32 core. Adjust the path if needed.
 
 Notes
 - OTA also prints progress to the serial log (115200). You’ll see “OTA: Start”, periodic progress, then “OTA: End”.
-- If mDNS is available on your network, you can reach the device by swimmachine.local; otherwise use its IP address.
+- If mDNS is available on your network, you can reach the device by `swimmachine.local`; otherwise use its IP address.
 
 ---
 
@@ -204,7 +240,7 @@ Normal Operation
 
 ### Connecting to the Webserver
 
-Once connected to WiFi, access the web UI:
+Once connected to WiFi or Ethernet, access the web UI:
 - By mDNS hostname: http://swimmachine.local (on networks that support mDNS).
 - Or by device IP address (check serial output or your router’s device list).
 

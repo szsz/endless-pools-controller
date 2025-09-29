@@ -4,6 +4,7 @@
 #include "web_ui.h"
 #include "app_network.h"
 #include "NetworkSetup.h"
+#include "hub75.h"
 #include <ArduinoOTA.h>
 #include "otapassword.h"
 
@@ -11,6 +12,8 @@ void setup()
 {
   Serial.begin(115200);
   delay(100);
+
+  setupHUB75();
 
   WebUI::begin();            // Wi-Fi + HTTP server
   Serial.println("web ui begin done");

@@ -13,7 +13,7 @@ public:
   : m_target(target), m_port(port) {}
 
   // Optionally bind a local UDP port (0 means default 45654)
-  bool begin(uint16_t localPort = 0);
+  void begin(uint16_t localPort = 0);
 
   // Poll incoming packets; must be called in loop()
   void loop();
@@ -25,11 +25,9 @@ public:
   // ConnectionManager integration: update interface preference
   void handleConnectionChange(bool ethHasIp, bool wifiHasIp, bool softApActive);
 
-  bool begin(IPAddress target, uint16_t port, uint16_t localPort = 0);
+  void begin(IPAddress target, uint16_t port, uint16_t localPort = 0);
 
-  // High-level event helpers
-  bool sendConnectionEvent(bool ethHasIp, bool wifiHasIp, bool softApActive);
-  bool sendWifiStaLost(int reason);
+
 
 
   // Raw bytes sender (binary payload)
@@ -53,6 +51,7 @@ private:
   // Internal state
   bool m_begun = false;      // begin() called by user
   bool m_udpReady = false;   // WiFiUDP actually begun (only when network has IP)
+  bool m_requestrebind = false; 
 
   enum class PreferredIf { NONE, ETH, WIFI_STA, SOFTAP };
   PreferredIf m_currentIf = PreferredIf::NONE;

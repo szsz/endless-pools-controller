@@ -13,6 +13,7 @@ static inline bool is_multicast_ip(const IPAddress& ip) {
 
 bool UDPEventSender::rebindUdp() {
   // Decide preferred interface by priority: Ethernet > WiFi STA > SoftAP
+  m_requestrebind = false;
   IPAddress ifIp;
   PreferredIf newIf = PreferredIf::NONE;
 
@@ -60,24 +61,25 @@ bool UDPEventSender::rebindUdp() {
   return m_udpReady;
 }
 
-bool UDPEventSender::begin(uint16_t localPort) {
+void UDPEventSender::begin(uint16_t localPort) {
   m_localPort = (localPort == 0) ? 45654 : localPort;
   m_begun = true;
-  return rebindUdp();
+  m_requestrebind=true;
 }
 
-bool UDPEventSender::begin(IPAddress target, uint16_t port, uint16_t localPort) {
+void UDPEventSender::begin(IPAddress target, uint16_t port, uint16_t localPort) {
   m_target = target;
   m_port = port;
   m_localPort = (localPort == 0) ? 45654 : localPort;
   m_begun = true;
-  return rebindUdp();
+  m_requestrebind=true;
 }
 
 void UDPEventSender::loop() {
   // Ensure socket is up before attempting any receive operations
-  if (m_begun && !m_udpReady) {
+  if (m_begun && (!m_udpReady|| m_requestrebind)) {
     rebindUdp();
+    return;
   }
   if (!m_udpReady) return;
 
@@ -102,7 +104,9 @@ void UDPEventSender::loop() {
 bool UDPEventSender::sendBytes(const uint8_t* data, size_t len) {
   // Ensure socket is up before any send
   if (m_begun && !m_udpReady) {
-    rebindUdp();
+    
+    m_requestrebind=true;
+    return false;
   }
   if (!m_udpReady) return false;
 
@@ -125,20 +129,6 @@ void UDPEventSender::handleConnectionChange(bool ethHasIp, bool wifiHasIp, bool 
 
   // Requirement: whenever connection changes, re-initialize UDP so it continues working
   if (m_begun) {
-    rebindUdp();
+  m_requestrebind=true;
   }
-}
-
-// High-level event helpers (simple text payloads)
-bool UDPEventSender::sendConnectionEvent(bool ethHasIp2, bool wifiHasIp2, bool softApActive2) {
-  char msg[64];
-  int n = snprintf(msg, sizeof(msg), "conn:%d,%d,%d",
-                   ethHasIp2 ? 1 : 0, wifiHasIp2 ? 1 : 0, softApActive2 ? 1 : 0);
-  return sendBytes(reinterpret_cast<const uint8_t*>(msg), (size_t)n);
-}
-
-bool UDPEventSender::sendWifiStaLost(int reason) {
-  char msg[32];
-  int n = snprintf(msg, sizeof(msg), "wifi_lost:%d", reason);
-  return sendBytes(reinterpret_cast<const uint8_t*>(msg), (size_t)n);
 }

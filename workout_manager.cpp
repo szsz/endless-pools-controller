@@ -1,6 +1,7 @@
 #include "workout_manager.h"
 #include "web_ui.h"
 #include <ArduinoJson.h>
+#include "hub75.h"
 
 static Workout current_workout_; // store currently active workout
 
@@ -102,4 +103,16 @@ void WorkoutManager::push_status_()
   String out;
   serializeJson(doc, out);
   WebUI::push_event("status", out.c_str());
+
+  // Update HUB75 display with seconds left in the current segment
+  if (st.active && st.idx >= 0 && st.idx < (int)current_workout_.steps.size())
+  {
+    // Treat elapsed_ms as signed to handle initial negative lag (mirrors web UI logic)
+    int32_t durMs = (int32_t)current_workout_.steps[st.idx].durSec * 1000;
+    int32_t elapsedSigned = (int32_t)st.elapsedMs; // interpret uint32 as signed
+    int32_t remainMs = durMs - elapsedSigned;
+    if (remainMs < 0) remainMs = 0;
+    int remSec = (remainMs + 999) / 1000; // ceil to seconds
+    setCurrentText(String(remSec));
+  }
 }

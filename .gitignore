@@ -3,3 +3,8 @@ data/wifi_config.json
 .pio
 .vscode
 otapassword.h
+/build
+/arduino
+boards.local.txt
+sketch.yaml
+/scripts

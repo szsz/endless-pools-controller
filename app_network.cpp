@@ -21,7 +21,7 @@ static void addCaptivePortalRoutes()
       "Password: <input type=\"password\" name=\"password\"><br>"
       "<input type=\"submit\" value=\"Save\">"
       "</form>"
-      "<p><a href=\"/index.html\">Open main interface</a></p>"
+      "<p><a href=\"/index.html\">Open main interface</a></p><p>get w</p>"
       "</body></html>";
     req->send(200, "text/html", html); });
 
