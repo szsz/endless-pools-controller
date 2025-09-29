@@ -80,6 +80,27 @@ void WebUI::begin()
                 req->send(404, "text/plain", "Upload status.html");
             } });
 
+    server.on("/force-ap.html", HTTP_GET, [](AsyncWebServerRequest *req)
+              {
+            if (LittleFS.exists("/force-ap.html"))
+            {
+                req->send(LittleFS, "/force-ap.html", "text/html");
+            }
+            else
+            {
+                req->send(404, "text/plain", "Upload force-ap.html");
+            } });
+    server.on("/force-sta.html", HTTP_GET, [](AsyncWebServerRequest *req)
+              {
+            if (LittleFS.exists("/force-sta.html"))
+            {
+                req->send(LittleFS, "/force-sta.html", "text/html");
+            }
+            else
+            {
+                req->send(404, "text/plain", "Upload force-sta.html");
+            } });
+
     server.on("/", HTTP_GET, serve_index);
     server.serveStatic("/static", LittleFS, "/static/");
 
@@ -165,6 +186,33 @@ void WebUI::begin()
               {
             WorkoutManager::stop();
             r->send(200); });
+
+    // API: force SoftAP or STA for N seconds
+    server.on("/api/force_ap", HTTP_POST, [](AsyncWebServerRequest *r)
+              {
+            if (!r->hasParam("seconds"))
+            {
+                r->send(400, "text/plain", "missing seconds");
+                return;
+            }
+            uint32_t sec = r->getParam("seconds")->value().toInt();
+            uint64_t ms64 = (uint64_t)sec * 1000ull;
+            uint32_t ms = ms64 > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)ms64;
+            g_conn.forceSoftAP(ms);
+            r->send(200, "text/plain", "OK"); });
+
+    server.on("/api/force_sta", HTTP_POST, [](AsyncWebServerRequest *r)
+              {
+            if (!r->hasParam("seconds"))
+            {
+                r->send(400, "text/plain", "missing seconds");
+                return;
+            }
+            uint32_t sec = r->getParam("seconds")->value().toInt();
+            uint64_t ms64 = (uint64_t)sec * 1000ull;
+            uint32_t ms = ms64 > 0xFFFFFFFFull ? 0xFFFFFFFFu : (uint32_t)ms64;
+            g_conn.forceSTA(ms);
+            r->send(200, "text/plain", "OK"); });
 
     // SSE handler already added in AppNetwork::begin()
     server.begin();

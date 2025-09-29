@@ -52,8 +52,8 @@ public:
   ConnectionManager(const char *hostname,
                     const char *softApSsid,
                     const char *softApPass,
-                    bool p_enable_softap = false,
-                    bool p_enable_sta = false,
+                    bool p_enable_softap = true,
+                    bool p_enable_sta = true,
                     bool p_enable_eth = true)
       : m_hostname(hostname),
         m_softApSsid(softApSsid),
@@ -113,7 +113,7 @@ public:
 
   // Set Wi-Fi STA credentials and optionally attempt immediate connection.
   // Simplified: non-blocking, rely on WIFI_STA_GOT_IP/DISCONNECTED events to update state.
-  void setWifiStaCredentials(const char *ssid, const char *pass, uint32_t timeoutMs = 8000)
+  void setWifiStaCredentials(const char *ssid, const char *pass, uint32_t force_STA_time =0 )
   {
     if (!ssid || !ssid[0])
     {
@@ -123,7 +123,8 @@ public:
     m_staSsid = String(ssid);
     m_staPass = pass ? String(pass) : String();
     // Temporarily suspend Wi-Fi disable policy so it attempts to connect with new credentials for 30s
-    forceSTA(30000);
+    if(force_STA_time)
+      forceSTA(force_STA_time);
   }
 
  
@@ -204,6 +205,7 @@ private:
   std::vector<ConnectionChangeCallback> m_subscribers;
 
   uint32_t m_forceApUntil = 0;
+  uint32_t m_STAstartuptimeputUntil = 0;
   uint32_t m_forceSTAUntil = 0;
 
   bool enable_softap = false;
@@ -213,7 +215,7 @@ private:
   bool need_eth() { return enable_eth; }
   bool need_sta()
   {
-    if (enable_eth && millis() < 5000)
+    if (enable_eth && millis() < 10000)
       return false;
       
     bool m_forceSTA = m_forceSTAUntil && (m_forceSTAUntil > millis());
@@ -223,25 +225,27 @@ private:
   }
   bool need_softap()
   {
+    if ((enable_eth|| enable_sta) && millis() < 10000)
+      return false;
+    if ((enable_eth&& enable_sta) && millis() < 15000)
+      return false;
     bool m_forceAp = m_forceApUntil && (m_forceApUntil > millis());
     if (!m_forceAp)
       m_forceApUntil = 0;
 
+    
+    if(m_STAstartuptimeputUntil && (m_forceSTAUntil > millis()))
+    {
+      if(!m_forceAp)
+        return false;
+    }
+    else
+    {
+      m_STAstartuptimeputUntil =0;
+    }
+
     return enable_softap && ((!m_ethHasIp && !m_wifiHasIp) || m_forceAp);
   }
-
-  // Helpers
-  bool isStaEnabled() const
-  {
-    wifi_mode_t m = WiFi.getMode();
-    return (m == WIFI_MODE_STA || m == WIFI_MODE_APSTA);
-  }
-  bool isApEnabled() const
-  {
-    wifi_mode_t m = WiFi.getMode();
-    return (m == WIFI_MODE_AP || m == WIFI_MODE_APSTA);
-  }
-
 
 
   void notify()
@@ -254,7 +258,6 @@ private:
     {
       cb(m_ethHasIp, m_wifiHasIp, m_softApActive);
     }
-    Serial.printf("test");
   }
 
   void setEthHasIp(bool v)
@@ -288,6 +291,8 @@ private:
   {
     if (!(WiFi.getMode() & WIFI_AP))
       {
+        Serial.println("starting SoftAp...");
+        printWifiMode();
         IPAddress ap_ip(SOFT_AP_IP_OCTETS);
         IPAddress ap_mask(SOFT_AP_MASK_OCTETS);
 
@@ -295,9 +300,9 @@ private:
         WiFi.softAPConfig(ap_ip, ap_ip, ap_mask);
         WiFi.softAP(m_softApSsid.c_str(), m_softApPass.c_str());
         setSoftApActive(true);
-        Serial.printf("SoftAP up: SSID=%s IP=%s\n",
-                      m_softApSsid.c_str(), WiFi.softAPIP().toString().c_str());
         printWifiMode();
+        Serial.println("SoftAP up: SSID=%s IP=%s\n",
+                      m_softApSsid.c_str(), WiFi.softAPIP().toString().c_str());
       }
   }
 
@@ -308,8 +313,8 @@ private:
         Serial.println("Disabling SoftAP...");
         WiFi.softAPdisconnect(false);
         WiFi.enableAP(false);  
-        Serial.println("SoftAP disabled!");
         printWifiMode();
+        Serial.println("SoftAP disabled!");
       }
   }
 
@@ -317,11 +322,15 @@ private:
   {
     if (!(WiFi.getMode() & WIFI_STA))
       {
+        m_STAstartuptimeputUntil = millis()+5000;
+        Serial.println("starting STA...");
+        printWifiMode();
         WiFi.enableSTA(true);
         WiFi.begin(m_staSsid.c_str(), m_staPass.c_str());
-        Serial.printf("SoftAP up: SSID=%s IP=%s\n",
-                      m_softApSsid.c_str(), WiFi.softAPIP().toString().c_str());
         printWifiMode();
+        m_forceSTAUntil = millis()+5000;
+        Serial.println("STA started: SSID=%s",
+                      m_staSsid.c_str());
       }
   }
 
@@ -332,8 +341,8 @@ private:
         Serial.println("Disabling STA...");
         WiFi.disconnect(false); 
         WiFi.enableSTA(false); 
-        Serial.println("STA disabled!");
         printWifiMode();
+        Serial.println("STA disabled!");
       }
   }
 
@@ -379,78 +388,145 @@ private:
   }
 
 
-  // Static callback adapter
-  static void onArduinoEvent(arduino_event_id_t event, arduino_event_info_t info)
+
+// Static callback adapter
+static void onArduinoEvent(arduino_event_id_t event, arduino_event_info_t info)
+{
+  if (!s_instance)
+    return;
+
+  switch (event)
   {
-    if (!s_instance)
-      return;
+  // -------------------- Generic Wi-Fi / IP events --------------------
+  case ARDUINO_EVENT_WIFI_READY:
+    Serial.println("Wi-Fi Ready");
+    break;
 
-    switch (event)
-    {
-    // -------- Ethernet events --------
-    case ARDUINO_EVENT_ETH_START:
-      Serial.println("ETH Started");
-      break;
+  case ARDUINO_EVENT_WIFI_SCAN_DONE:
+    Serial.printf("Wi-Fi Scan Done: status=%u, aps=%u\n",
+                  info.wifi_scan_done.status,
+                  info.wifi_scan_done.number);
+    break;
 
-    case ARDUINO_EVENT_ETH_CONNECTED:
-      Serial.println("ETH Connected");
-      break;
 
-    case ARDUINO_EVENT_ETH_GOT_IP:
-      s_instance->setEthHasIp(true);
-      Serial.printf("ETH Got IP: %s\n", ETH.localIP().toString().c_str());
-      // With Ethernet up, enforce Wi-Fi disable (unless forced AP)
-      break;
 
-    case ARDUINO_EVENT_ETH_LOST_IP:
-      s_instance->handleEthDown("ETH Lost IP");
-      break;
+  // -------------------- Ethernet events --------------------
+  case ARDUINO_EVENT_ETH_START:
+    Serial.println("ETH Started");
+    break;
 
-    case ARDUINO_EVENT_ETH_DISCONNECTED:
-      s_instance->handleEthDown("ETH Disconnected");
-      break;
+  case ARDUINO_EVENT_ETH_CONNECTED:
+    Serial.println("ETH Connected");
+    break;
 
-    case ARDUINO_EVENT_ETH_STOP:
-      s_instance->handleEthDown("ETH Stopped");
-      break;
+  case ARDUINO_EVENT_ETH_GOT_IP:
+    s_instance->setEthHasIp(true);
+    Serial.printf("ETH Got IP: %s\n", ETH.localIP().toString().c_str());
+    // With Ethernet up, enforce Wi-Fi disable (unless forced AP)
+    break;
 
-    // -------- Wi-Fi AP events --------
-    case ARDUINO_EVENT_WIFI_AP_START:
-      Serial.println("AP Started");
-      s_instance->setSoftApActive(true);
-      break;
 
-    case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
-      Serial.println("AP STA Connected");
-      break;
+  case ARDUINO_EVENT_ETH_DISCONNECTED:
+    s_instance->handleEthDown("ETH Disconnected");
+    break;
 
-    case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
-      Serial.println("AP STA Disconnected");
-      break;
+  case ARDUINO_EVENT_ETH_STOP:
+    s_instance->handleEthDown("ETH Stopped");
+    break;
 
-    case ARDUINO_EVENT_WIFI_AP_STOP:
-      Serial.println("AP Stopped");
-      s_instance->setSoftApActive(false);
-      break;
+  // (Optional, if your core emits IPv6 events)
+  case ARDUINO_EVENT_ETH_GOT_IP6:
+    Serial.printf("ETH Got IPv6: %s\n", ETH.localIP().toString().c_str());
+    break;
 
-    // -------- Wi-Fi STA events --------
-    case ARDUINO_EVENT_WIFI_STA_GOT_IP:
-      s_instance->setWifiHasIp(true);
-      Serial.printf("Wi-Fi STA GOT IP: %s\n", WiFi.localIP().toString().c_str());
-      // After a successful STA connection, resume normal policy:
-      // allow Ethernet to disable Wi-Fi again if applicable.
-      break;
+  // -------------------- Wi-Fi AP (SoftAP) events --------------------
+  case ARDUINO_EVENT_WIFI_AP_START:
+    Serial.println("AP Started");
+    s_instance->setSoftApActive(true);
+    break;
 
-    case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
-      s_instance->setWifiHasIp(false);
-      Serial.println("Wi-Fi STA Disconnected");
-      break;
-
-    default:
-      break;
+  case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+    Serial.print("AP STA Connected: MAC=");
+    for (int i = 0; i < 6; ++i) {
+      Serial.printf("%02X", info.wifi_ap_staconnected.mac[i]);
+      if (i < 5) Serial.print(":");
     }
+    Serial.printf(", AID=%d\n", info.wifi_ap_staconnected.aid);
+    break;
+
+  case ARDUINO_EVENT_WIFI_AP_STAIPASSIGNED:
+    Serial.printf("AP STA IP Assigned\n");
+    break;
+
+  case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+    Serial.print("AP STA Disconnected: MAC=");
+    for (int i = 0; i < 6; ++i) {
+      Serial.printf("%02X", info.wifi_ap_stadisconnected.mac[i]);
+      if (i < 5) Serial.print(":");
+    }
+    Serial.printf(", AID=%d\n", info.wifi_ap_stadisconnected.aid);
+    break;
+
+  case ARDUINO_EVENT_WIFI_AP_PROBEREQRECVED:
+    Serial.print("AP Probe Request: MAC=");
+    for (int i = 0; i < 6; ++i) {
+      Serial.printf("%02X", info.wifi_ap_probereqrecved.mac[i]);
+      if (i < 5) Serial.print(":");
+    }
+    Serial.printf(", RSSI=%d\n", info.wifi_ap_probereqrecved.rssi);
+    break;
+
+  case ARDUINO_EVENT_WIFI_AP_STOP:
+    Serial.println("AP Stopped");
+    s_instance->setSoftApActive(false);
+    break;
+
+  // -------------------- Wi-Fi STA (client) events --------------------
+  case ARDUINO_EVENT_WIFI_STA_START:
+    Serial.println("Wi-Fi STA Start");
+    break;
+
+  case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+    Serial.printf("Wi-Fi STA Connected: SSID=%s, CH=%u, BSSID=",
+                  (const char*)info.wifi_sta_connected.ssid,
+                  info.wifi_sta_connected.channel);
+    for (int i = 0; i < 6; ++i) {
+      Serial.printf("%02X", info.wifi_sta_connected.bssid[i]);
+      if (i < 5) Serial.print(":");
+    }
+    Serial.println();
+    break;
+
+  case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+    s_instance->setWifiHasIp(true);
+    Serial.printf("Wi-Fi STA GOT IP: %s\n", WiFi.localIP().toString().c_str());
+    // After a successful STA connection, resume normal policy:
+    // allow Ethernet to disable Wi-Fi again if applicable.
+    break;
+
+  case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+    s_instance->setWifiHasIp(false);
+    Serial.println("Wi-Fi STA Lost IP");
+    break;
+
+  case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+    s_instance->setWifiHasIp(false);
+    Serial.printf("Wi-Fi STA Disconnected (reason=%d)\n",
+                  info.wifi_sta_disconnected.reason);
+    break;
+
+  case ARDUINO_EVENT_WIFI_STA_STOP:
+    s_instance->setWifiHasIp(false);
+    Serial.println("Wi-Fi STA Stop");
+    break;
+
+  default:
+    Serial.printf("Unknown Event: %d\n", (int)event);
+    break;
   }
+}
 };
+
 
 // Define the static member
 inline ConnectionManager *ConnectionManager::s_instance = nullptr;
