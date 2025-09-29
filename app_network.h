@@ -2,6 +2,7 @@
 
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
+#include "NetworkSetup.h"
 
 // Simple network facade built on ConnectionManager/NetworkSetup.
 // Provides a shared AsyncWebServer and AsyncEventSource (SSE).
@@ -18,5 +19,6 @@ namespace AppNetwork {
 
   // Access the shared AsyncEventSource (SSE) instance for event pushing.
   AsyncEventSource& events();
+
 
 } // namespace AppNetwork

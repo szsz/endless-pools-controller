@@ -2,9 +2,10 @@
 #include "NetworkSetup.h"
 
 
-// Internal singletons
+/* Internal singletons */
 static AsyncWebServer g_server(80);
 static AsyncEventSource g_sse("/events");
+
 
 namespace AppNetwork
 {
@@ -49,6 +50,10 @@ void begin()
   applyWifiConfigFromFile();
   g_conn.begin();
 
+  // Ensure SSE handler is present
+  g_server.addHandler(&g_sse);
+
+
   // If not connected yet, provide a minimal captive portal while SoftAP is active
   if (!(g_conn.ethHasIp() || g_conn.wifiHasIp()))
   {
@@ -70,5 +75,6 @@ AsyncEventSource &events()
 {
   return g_sse;
 }
+
 
 } // namespace AppNetwork

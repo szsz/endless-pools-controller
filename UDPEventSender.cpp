@@ -62,12 +62,18 @@ bool UDPEventSender::rebindUdp() {
 }
 
 void UDPEventSender::begin(uint16_t localPort) {
+  #ifdef NOUDPTEST
+  return;
+  #endif
   m_localPort = (localPort == 0) ? 45654 : localPort;
   m_begun = true;
   m_requestrebind=true;
 }
 
 void UDPEventSender::begin(IPAddress target, uint16_t port, uint16_t localPort) {
+  #ifdef NOUDPTEST
+  return;
+  #endif
   m_target = target;
   m_port = port;
   m_localPort = (localPort == 0) ? 45654 : localPort;
@@ -76,6 +82,9 @@ void UDPEventSender::begin(IPAddress target, uint16_t port, uint16_t localPort) 
 }
 
 void UDPEventSender::loop() {
+  #ifdef NOUDPTEST
+  return;
+  #endif
   // Ensure socket is up before attempting any receive operations
   if (m_begun && (!m_udpReady|| m_requestrebind)) {
     rebindUdp();
@@ -102,6 +111,9 @@ void UDPEventSender::loop() {
 }
 
 bool UDPEventSender::sendBytes(const uint8_t* data, size_t len) {
+  #ifdef NOUDPTEST
+  return true;
+  #endif
   // Ensure socket is up before any send
   if (m_begun && !m_udpReady) {
     

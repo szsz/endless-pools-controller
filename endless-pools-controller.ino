@@ -1,3 +1,5 @@
+#define NOUDPTEST
+
 #include <Arduino.h>
 #include "swim_machine.h"
 #include "workout_manager.h"

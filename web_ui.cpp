@@ -166,8 +166,7 @@ void WebUI::begin()
             WorkoutManager::stop();
             r->send(200); });
 
-    // SSE
-    server.addHandler(&AppNetwork::events());
+    // SSE handler already added in AppNetwork::begin()
     server.begin();
 }
 
