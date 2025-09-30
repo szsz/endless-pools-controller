@@ -1,11 +1,8 @@
 #pragma once
 
-#include <Arduino.h>
-#include <ESPAsyncWebServer.h>
-#include "NetworkSetup.h"
 
-// Simple network facade built on ConnectionManager/NetworkSetup.
-// Provides a shared AsyncWebServer and AsyncEventSource (SSE).
+/* Simple network facade built on ConnectionManager/NetworkSetup.
+   Owns AsyncWebServer and AsyncEventSource (SSE) and defines all routes. */
 namespace AppNetwork {
 
   // Initialize networking (Ethernet/WiFi/SoftAP via ConnectionManager) and basic captive portal.
@@ -14,11 +11,8 @@ namespace AppNetwork {
   // True if either Ethernet or WiFi STA has an IP.
   bool connected();
 
-  // Access the shared AsyncWebServer instance to register routes.
-  AsyncWebServer& server();
-
-  // Access the shared AsyncEventSource (SSE) instance for event pushing.
-  AsyncEventSource& events();
+  // Push an SSE event with given name and JSON payload.
+  void push_event(const char* event, const char* json);
 
 
 } // namespace AppNetwork

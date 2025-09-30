@@ -3,7 +3,7 @@
 #include <Arduino.h>
 
 namespace WebUI {
-  /** Initialise filesystem and register HTTP routes (after network is up). */
+  /** Initialise filesystem and bring up networking; all HTTP routes/SSE are owned by AppNetwork. */
   void begin();
 
   /** Call in loop() to drive SSE heartbeats. */

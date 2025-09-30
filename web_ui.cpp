@@ -1,48 +1,8 @@
 #include "web_ui.h"
-#include "workout_manager.h"
-#include "workout_storage.h"
 #include "app_network.h"
-#include "NetworkSetup.h"
-#include <ArduinoJson.h>
 #include <LittleFS.h>
 
 using namespace WebUI;
-using namespace WorkoutStorage;
-
-const uint32_t maxJsonSize = 1024 * 8;
-
-// helper: send JSON
-static void send_json(AsyncWebServerRequest *r, const String &js)
-{
-    r->send(200, "application/json", js);
-}
-
-// helper: require ?id=
-static bool require_id(AsyncWebServerRequest *r, String &id)
-{
-    if (!r->hasParam("id"))
-    {
-        r->send(400, "text/plain", "missing id");
-        return false;
-    }
-    id = r->getParam("id")->value();
-    return true;
-}
-
-static void serve_index(AsyncWebServerRequest *req)
-{
-    // When SoftAP is active, redirect to Wi-Fi setup page
-    if (g_conn.softApActive())
-    {
-        req->redirect("/wifi");
-        return;
-    }
-
-    if (LittleFS.exists("/index.html"))
-        req->send(LittleFS, "/index.html", "text/html");
-    else
-        req->send(200, "text/plain", "Upload index.html");
-}
 
 void WebUI::begin()
 {
@@ -53,167 +13,8 @@ void WebUI::begin()
         Serial.println("Failed to mount/format LittleFS, continuing without FS");
     }
 
-    // Bring up networking (WiFi/Ethernet/mDNS/AP portal handled inside Network)
+    // Bring up networking; all routes and SSE are owned by AppNetwork
     AppNetwork::begin();
-
-    auto &server = AppNetwork::server();
-
-    server.on("/run.html", HTTP_GET, [](AsyncWebServerRequest *req)
-              {
-            if (LittleFS.exists("/run.html"))
-            {
-                req->send(LittleFS, "/run.html", "text/html");
-            }
-            else
-            {
-                req->send(404, "text/plain", "Upload run.html");
-            } });
-
-    server.on("/status.html", HTTP_GET, [](AsyncWebServerRequest *req)
-              {
-            if (LittleFS.exists("/status.html"))
-            {
-                req->send(LittleFS, "/status.html", "text/html");
-            }
-            else
-            {
-                req->send(404, "text/plain", "Upload status.html");
-            } });
-
-    server.on("/force-ap.html", HTTP_GET, [](AsyncWebServerRequest *req)
-              {
-            if (LittleFS.exists("/force-ap.html"))
-            {
-                req->send(LittleFS, "/force-ap.html", "text/html");
-            }
-            else
-            {
-                req->send(404, "text/plain", "Upload force-ap.html");
-            } });
-    server.on("/force-sta.html", HTTP_GET, [](AsyncWebServerRequest *req)
-              {
-            if (LittleFS.exists("/force-sta.html"))
-            {
-                req->send(LittleFS, "/force-sta.html", "text/html");
-            }
-            else
-            {
-                req->send(404, "text/plain", "Upload force-sta.html");
-            } });
-
-    server.on("/", HTTP_GET, serve_index);
-    server.serveStatic("/static", LittleFS, "/static/");
-
-    // list IDs
-    server.on("/api/workouts", HTTP_GET, [](AsyncWebServerRequest *r)
-              {
-            StaticJsonDocument<256> d;
-            auto arr = d.to<JsonArray>();
-            for (auto id : list_ids())
-                arr.add(id);
-            String out;
-            serializeJson(d, out);
-            send_json(r, out); });
-
-    // get one
-    server.on("/api/workout", HTTP_GET, [](AsyncWebServerRequest *r)
-              {
-            String id;
-            if (!require_id(r, id))
-                return;
-            Workout w;
-            if (!load(id, w))
-            {
-                r->send(404);
-                return;
-            }
-            send_json(r, to_json(w)); });
-
-    // save one
-    server.on("/api/workout", HTTP_POST, [](AsyncWebServerRequest *r)
-              { r->send(200); }, nullptr, [](AsyncWebServerRequest *r, uint8_t *data, size_t len, size_t index, size_t total)
-              {
-            static uint8_t g_buffer[maxJsonSize]; // for reading Json objects
-            if (total > maxJsonSize)
-            {
-                r->send(413, "text/plain", "Too large");
-                return;
-            } // 413 Payload Too Large
-            memcpy(&g_buffer[index], data, len);
-            if (index + len < total) // more coming – return now
-                return;
-            Workout w;
-            if (!from_json(g_buffer, total, w))
-            {
-                r->send(400);
-                return;
-            }
-            save(w);
-            send_json(r, to_json(w)); });
-
-    // delete one
-    server.on("/api/workout", HTTP_DELETE, [](AsyncWebServerRequest *r)
-              {
-            String id;
-            if (!require_id(r, id))
-                return;
-            if (!erase(id))
-            {
-                r->send(404);
-                return;
-            }
-            r->send(200); });
-
-    // run only the specified workout
-    server.on("/api/run", HTTP_POST, [](AsyncWebServerRequest *r)
-              {
-            String id;
-            if (!require_id(r, id))
-                return;
-            if (!WorkoutManager::run(id))
-            {
-                r->send(404, "text/plain", "could not start workout");
-                return;
-            }
-            r->send(200, "text/plain", "OK"); });
-
-    // pause & stop unchanged
-    server.on("/api/pause", HTTP_POST, [](AsyncWebServerRequest *r)
-              {
-            WorkoutManager::pause();
-            r->send(200); });
-    server.on("/api/stop", HTTP_POST, [](AsyncWebServerRequest *r)
-              {
-            WorkoutManager::stop();
-            r->send(200); });
-
-    // API: force SoftAP or STA for N seconds
-    server.on("/api/force_ap", HTTP_POST, [](AsyncWebServerRequest *r)
-              {
-            if (!r->hasParam("seconds"))
-            {
-                r->send(400, "text/plain", "missing seconds");
-                return;
-            }
-            uint32_t sec = r->getParam("seconds")->value().toInt();
-            uint32_t ms = sec * 1000u;
-            g_conn.forceSoftAP(ms);
-            r->send(200, "text/plain", "OK"); });
-
-    server.on("/api/force_sta", HTTP_POST, [](AsyncWebServerRequest *r)
-              {
-            if (!r->hasParam("seconds"))
-            {
-                r->send(400, "text/plain", "missing seconds");
-                return;
-            }
-            uint32_t sec = r->getParam("seconds")->value().toInt();
-            uint32_t ms = sec * 1000ull;
-            g_conn.forceSTA(ms);
-            r->send(200, "text/plain", "OK"); });
-
-    // SSE handler already added in AppNetwork::begin()
-    server.begin();
 }
 
 void WebUI::loop()
@@ -228,7 +29,7 @@ void WebUI::loop()
 
 void WebUI::push_event(const char *e, const char *j)
 {
-    AppNetwork::events().send(j, e);
+    AppNetwork::push_event(e, j);
 }
 
 void WebUI::push_network_event(const uint8_t *data, size_t len)
@@ -245,6 +46,5 @@ void WebUI::push_network_event(const uint8_t *data, size_t len)
 
     // Send hex string as JSON string
     String json = String("{\"packet\":\"") + hexStr + "\"}";
-
-    AppNetwork::events().send(json.c_str(), "network");
+    AppNetwork::push_event("network", json.c_str());
 }
