@@ -45,6 +45,7 @@
 // Event callback signature: notifies whenever ETH/WIFI connection status changes.
 // Parameters are: (ethHasIp, wifiHasIp).
 using ConnectionChangeCallback = std::function<void(bool, bool, bool)>; // (ethHasIp, wifiHasIp, softApActive)
+using PreWifiStopCallback = std::function<void()>; // Fired just before STA is disconnected/disabled
 
 class ConnectionManager
 {
@@ -98,6 +99,10 @@ public:
   void subscribe(ConnectionChangeCallback cb)
   {
     m_subscribers.push_back(cb);
+  }
+  void subscribePreWifiStop(PreWifiStopCallback cb)
+  {
+    m_preWifiStopSubscribers.push_back(cb);
   }
  // Force SoftAP even if STA is connected. After durationMs, attempt to reconnect STA,
   // and revert to normal policy (SoftAP off when STA has IP).
@@ -203,6 +208,7 @@ private:
   String m_staPass;
 
   std::vector<ConnectionChangeCallback> m_subscribers;
+  std::vector<PreWifiStopCallback> m_preWifiStopSubscribers;
 
   uint32_t m_forceApUntil = 0;
   uint32_t m_STAstartuptimeputUntil = 0;
@@ -257,6 +263,13 @@ private:
     for (auto &cb : m_subscribers)
     {
       cb(m_ethHasIp, m_wifiHasIp, m_softApActive);
+    }
+  }
+  void notifyPreWifiStop()
+  {
+    for (auto &cb : m_preWifiStopSubscribers)
+    {
+      cb();
     }
   }
 
@@ -340,6 +353,8 @@ private:
     if (WiFi.getMode() & WIFI_STA)
       {
         Serial.println("Disabling STA...");
+        // Notify subscribers BEFORE tearing down STA so they can unbind sockets
+        notifyPreWifiStop();
         WiFi.disconnect(false); 
         WiFi.enableSTA(false); 
         printWifiMode();

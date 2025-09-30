@@ -215,6 +215,11 @@ void SwimMachine::begin(void (*push_network_event)(const uint8_t *data, size_t l
     mcast.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
     ctrl.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
   });
+  // Ensure UDP sockets are unbound before STA disconnects
+  g_conn.subscribePreWifiStop([]() {
+    mcast.unbind();
+    ctrl.unbind();
+  });
 
   // Join multicast group to receive status/acks
   mcast.onReceive([](const uint8_t *data, size_t len, const IPAddress &remote, uint16_t rport) {

@@ -33,6 +33,10 @@ public:
   // Raw bytes sender (binary payload)
   bool sendBytes(const uint8_t* data, size_t len);
 
+  // Immediately unbind the UDP socket; will lazily rebind on next read/send
+  // only if there is an active network.
+  void unbind();
+
 private:
   IPAddress m_target;
   uint16_t  m_port = 0;
@@ -52,6 +56,7 @@ private:
   bool m_begun = false;      // begin() called by user
   bool m_udpReady = false;   // WiFiUDP actually begun (only when network has IP)
   bool m_requestrebind = false; 
+  bool m_pauseRebind = false; // set by unbind() to defer rebind until next connection change
 
   enum class PreferredIf { NONE, ETH, WIFI_STA, SOFTAP };
   PreferredIf m_currentIf = PreferredIf::NONE;

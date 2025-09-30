@@ -1,6 +1,8 @@
 #include "UDPEventSender.h"
 #include <string.h>
 
+#define NOUDPTEST2
+
 namespace {
 static inline bool is_valid_ip(const IPAddress& ip) {
   return !(ip[0] == 0 && ip[1] == 0 && ip[2] == 0 && ip[3] == 0);
@@ -12,6 +14,9 @@ static inline bool is_multicast_ip(const IPAddress& ip) {
 } // namespace
 
 bool UDPEventSender::rebindUdp() {
+    #ifdef NOUDPTEST
+  return true;
+  #endif
   // Decide preferred interface by priority: Ethernet > WiFi STA > SoftAP
   m_requestrebind = false;
   IPAddress ifIp;
@@ -61,6 +66,18 @@ bool UDPEventSender::rebindUdp() {
   return m_udpReady;
 }
 
+void UDPEventSender::unbind() {
+  #ifdef NOUDPTEST
+  return;
+  #endif
+  if (m_udpReady) {
+    m_udp.stop();
+  }
+  m_udpReady = false;
+  m_currentIf = PreferredIf::NONE;
+  m_requestrebind = false;
+}
+
 void UDPEventSender::begin(uint16_t localPort) {
   #ifdef NOUDPTEST
   return;
@@ -87,7 +104,10 @@ void UDPEventSender::loop() {
   #endif
   // Ensure socket is up before attempting any receive operations
   if (m_begun && (!m_udpReady|| m_requestrebind)) {
-    rebindUdp();
+    if (m_ethHasIp || m_wifiHasIp || m_softApActive) {
+      rebindUdp();
+    }
+    // If no active network, skip receive path (acts like read returning 0)
     return;
   }
   if (!m_udpReady) return;
@@ -116,9 +136,12 @@ bool UDPEventSender::sendBytes(const uint8_t* data, size_t len) {
   #endif
   // Ensure socket is up before any send
   if (m_begun && !m_udpReady) {
-    
-    m_requestrebind=true;
-    return false;
+    // Bind on demand only if there is an active network
+    if (m_ethHasIp || m_wifiHasIp || m_softApActive) {
+      rebindUdp();
+    } else {
+      return false; // no active network -> write must fail
+    }
   }
   if (!m_udpReady) return false;
 
