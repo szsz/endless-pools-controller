@@ -1,5 +1,5 @@
-#define NOUDPTEST
-
+//#define NOUDPTEST
+#define SWIMMACHINE
 
 #include <Arduino.h>
 #ifdef SWIMMACHINE

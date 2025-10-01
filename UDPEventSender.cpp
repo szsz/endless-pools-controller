@@ -1,7 +1,7 @@
 #include "UDPEventSender.h"
 #include <string.h>
 
-#define NOUDPTEST
+//#define NOUDPTEST
 
 namespace {
 static inline bool is_valid_ip(const IPAddress& ip) {
