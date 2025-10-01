@@ -1,7 +1,6 @@
 #include "UDPEventSender.h"
 #include <string.h>
 
-#define NOUDPTEST
 
 namespace {
 static inline bool is_valid_ip(const IPAddress& ip) {
@@ -70,11 +69,8 @@ void UDPEventSender::unbind() {
   #ifdef NOUDPTEST
   return;
   #endif
-  if (m_udpReady) {
-    m_udp.stop();
-  }
-  m_udpReady = false;
-  m_currentIf = PreferredIf::NONE;
+  // Defer actual stop to loop() to avoid interacting with lwIP from unexpected contexts
+  m_deferredStop = true;
   m_requestrebind = false;
 }
 
@@ -102,6 +98,17 @@ void UDPEventSender::loop() {
   #ifdef NOUDPTEST
   return;
   #endif
+  // Handle deferred stop requests in a controlled place
+  if (m_deferredStop) {
+    if (m_udpReady) {
+      m_udp.stop();
+      m_udpReady = false;
+    }
+    m_currentIf = PreferredIf::NONE;
+    m_deferredStop = false;
+    // Do not attempt any IO this cycle
+    return;
+  }
   // Ensure socket is up before attempting any receive operations
   if (m_begun && (!m_udpReady|| m_requestrebind)) {
     if (m_ethHasIp || m_wifiHasIp || m_softApActive) {

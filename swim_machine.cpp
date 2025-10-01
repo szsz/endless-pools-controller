@@ -59,9 +59,11 @@ static uint32_t monoTick()
 }
 
 /* ------------ send queue and flow control ----------------------- */
-static uint16_t messagequeue[16];
-static uint16_t *nextmessagetosend = messagequeue;
-static uint16_t *nextmessage = messagequeue;
+// Robust ring buffer of command/param pairs to avoid out-of-bounds access
+struct Msg { uint16_t cmd; uint16_t param; };
+static Msg messagequeue[16];
+static size_t q_head = 0; // index of next message to send
+static size_t q_tail = 0; // index of next free slot (insertion point)
 
 static uint8_t lastSentIdx2 = 0xC5; // so first increment is 0x64
 static uint8_t idx2Counter = 0xC5;  // so first increment is 0x64
@@ -70,12 +72,17 @@ static bool resendLastPacket = false;
 
 static void queuePkt(uint16_t command, uint16_t param = 0)
 {
-  *nextmessage = command;
-  nextmessage++;
-  *nextmessage = param;
-  nextmessage++;
-  if (nextmessage - messagequeue >= (int)(sizeof(messagequeue) / sizeof(*messagequeue)))
-    nextmessage = messagequeue;
+  const size_t N = sizeof(messagequeue) / sizeof(messagequeue[0]);
+  // Write at tail
+  messagequeue[q_tail].cmd = command;
+  messagequeue[q_tail].param = param;
+  // Advance tail
+  size_t next_tail = (q_tail + 1) % N;
+  // If buffer is full, drop the oldest (advance head)
+  if (next_tail == q_head) {
+    q_head = (q_head + 1) % N;
+  }
+  q_tail = next_tail;
 }
 
 static void confirmPacket(uint8_t idx2)
@@ -92,9 +99,12 @@ static void confirmPacket(uint8_t idx2)
     lastReceivedIdx2 = idx2;
     readyToSendNext = true;
     resendLastPacket = false;
-    nextmessagetosend += 2;
-    if (nextmessagetosend - messagequeue >= (int)(sizeof(messagequeue) / sizeof(*messagequeue)))
-      nextmessagetosend = messagequeue;
+
+    // Consume the message that was just acknowledged
+    const size_t N = sizeof(messagequeue) / sizeof(messagequeue[0]);
+    if (q_head != q_tail) {
+      q_head = (q_head + 1) % N;
+    }
   }
   else
   {
@@ -141,22 +151,26 @@ void motorStop()
 /* ------------ raw packet emitter ------------------------------- */
 static void sendPkt()
 {
-  if (nextmessagetosend == nextmessage)
+  // Empty queue?
+  if (q_head == q_tail)
     return;
 
+  const size_t N = sizeof(messagequeue) / sizeof(messagequeue[0]);
+  const Msg &msg = messagequeue[q_head];
+
   // do not send message when turning off or slowing down
-  if (/* command byte */ ((uint8_t)(*nextmessagetosend & 0xFF) == 0x4E) ||
-      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x0E) ||
-      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x4A) ||
-      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x0A))
+  if (/* command byte */ ((uint8_t)(msg.cmd & 0xFF) == 0x4E) ||
+      ((uint8_t)(msg.cmd & 0xFF) == 0x0E) ||
+      ((uint8_t)(msg.cmd & 0xFF) == 0x4A) ||
+      ((uint8_t)(msg.cmd & 0xFF) == 0x0A))
     return;
 
   // Only send if ready or if a resend is required
   if (!readyToSendNext && !resendLastPacket)
     return;
 
-  uint16_t command = *nextmessagetosend;
-  uint16_t param = *(nextmessagetosend + 1);
+  uint16_t command = msg.cmd;
+  uint16_t param = msg.param;
 
   uint8_t idx2;
   if (resendLastPacket)
