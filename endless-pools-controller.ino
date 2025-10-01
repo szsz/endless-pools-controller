@@ -52,5 +52,20 @@ void loop()
   ArduinoOTA.handle();
   WorkoutManager::tick();    // 1 Hz countdown
   SwimMachine::tick();       // drive swim-machine protocol
-  delay(250);
+
+  static uint32_t lastMemLogMs = 0;
+  uint32_t now = millis();
+  if (now - lastMemLogMs >= 1000) {
+    lastMemLogMs = now;
+    size_t heapTotal = ESP.getHeapSize();
+    size_t heapFree = ESP.getFreeHeap();
+    size_t heapUsed = heapTotal - heapFree;
+    size_t heapMaxAlloc = ESP.getMaxAllocHeap();
+    size_t heapMinFree = ESP.getMinFreeHeap();
+    Serial.printf("MEM: heap total=%u bytes, used=%u bytes, free=%u bytes, maxAlloc=%u, minFree=%u\n",
+                  (unsigned)heapTotal, (unsigned)heapUsed, (unsigned)heapFree,
+                  (unsigned)heapMaxAlloc, (unsigned)heapMinFree);
+  }
+
+  delay(49);
 }

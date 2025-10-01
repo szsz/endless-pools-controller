@@ -315,6 +315,12 @@ void SwimMachine::stop()
 /* --------------------------------------------------------------- */
 void SwimMachine::tick()
 {
+  static uint32_t prev =0;
+  uint32_t now = millis();
+  if(now > 250 && now<prev+250)
+    return;
+  prev = now;
+
   // Process UDP (receives multicast acks and keeps sockets rebound)
   mcast.loop();
   ctrl.loop();
@@ -325,7 +331,6 @@ void SwimMachine::tick()
   if (!sim.active || sim.paused)
     return;
 
-  uint32_t now = millis();
 
   /* start next segment if idx == -1 OR segment finished */
   if (sim.idx == -1 ||

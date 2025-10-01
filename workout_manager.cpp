@@ -60,8 +60,18 @@ void WorkoutManager::stop()
   push_status_();
 }
 
+
+static bool s_active = false;
 void WorkoutManager::tick()
 {
+  if(!s_active){
+    drawSwimmerAnimationTick();
+  }
+  static uint32_t prev =0;
+  uint32_t now = millis();
+  if(now > 250 && now<prev+250)
+    return;
+  prev = now;
   // Just push status, no internal timer needed
   push_status_();
 }
@@ -77,6 +87,7 @@ void WorkoutManager::push_status_()
   if (cap > 6144) cap = 6144;            // clamp to a sane upper bound
   DynamicJsonDocument doc(cap);
   doc["running"] = st.active;
+  s_active=st.active;
   doc["paused"] = st.paused;
   doc["current_step"] = st.idx;
   doc["elapsed_ms"] = st.elapsedMs;
@@ -102,17 +113,9 @@ void WorkoutManager::push_status_()
 
   String out;
   serializeJson(doc, out);
-  WebUI::push_event("status", out.c_str());
-
-  // Update HUB75 display with seconds left in the current segment
-  if (st.active && st.idx >= 0 && st.idx < (int)current_workout_.steps.size())
-  {
-    // Treat elapsed_ms as signed to handle initial negative lag (mirrors web UI logic)
-    int32_t durMs = (int32_t)current_workout_.steps[st.idx].durSec * 1000;
-    int32_t elapsedSigned = (int32_t)st.elapsedMs; // interpret uint32 as signed
-    int32_t remainMs = durMs - elapsedSigned;
-    if (remainMs < 0) remainMs = 0;
-    int remSec = (remainMs + 999) / 1000; // ceil to seconds
-    setCurrentText(String(remSec));
+  if(s_active){
+    //printJSon(doc);
   }
+  WebUI::push_event("status", out.c_str());
+  
 }
