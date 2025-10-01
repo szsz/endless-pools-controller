@@ -1,9 +1,5 @@
 #pragma once
-
-#include <Arduino.h>
-#include <vector>
-#include "workout_storage.h"
-#include "swim_machine.h"
+#include <string.h>
 
 class WorkoutManager {
  public:

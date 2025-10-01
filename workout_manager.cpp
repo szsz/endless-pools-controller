@@ -1,4 +1,7 @@
 #include "workout_manager.h"
+#include <Arduino.h>
+#include "workout_storage.h"
+#include "swim_machine.h"
 #include "web_ui.h"
 #include <ArduinoJson.h>
 #ifdef HUB75EBABLE

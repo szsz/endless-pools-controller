@@ -1,5 +1,6 @@
 #include "web_ui.h"
 #include "app_network.h"
+#include "NetworkSetup.h"
 #include <LittleFS.h>
 
 using namespace WebUI;
@@ -15,12 +16,12 @@ void WebUI::begin()
 
     // Bring up networking; all routes and SSE are owned by AppNetwork
     AppNetwork::begin();
-    NetworkSetup::begin()
+    NetworkSetup::begin();
 }
 
 void WebUI::loop()
 {    
-    NetworkSetup::loop()
+    NetworkSetup::loop();
     static uint32_t t0 = millis();
     if (millis() - t0 > 2000)
     {

@@ -1,14 +1,12 @@
 #include "NetworkSetup.h"
+#include <Arduino.h>
+#include <LittleFS.h>
+#include <ArduinoJson.h>
 
 // Define global instances here so there's a single definition across the program.
 ConnectionManager g_conn(HOSTNAME, SOFT_AP_SSID, SOFT_AP_PASS);
 
 ConnectionManager& NetworkSetup::conn() { return g_conn; }
-
-#include <Arduino.h>
-#include <LittleFS.h>
-#include <ArduinoJson.h>
-
 
 
 // Apply WiFi config from LittleFS wifi_config.json if present
