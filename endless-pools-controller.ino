@@ -38,16 +38,18 @@ inline void heapCheckHardImpl(const char* file, int line) {
 #include "web_ui.h"
 #endif
 
-//#define MEMTEST
+#define MEMTEST
 #ifdef MEMTEST
-//static byte g[180000];
-//static byte _h[40000];
+static byte gg1[180000];
+static byte gg2[40000];
 #endif
 void setup()
 {
   Serial.begin(115200);
   delay(100);
-
+#ifdef MEMTEST
+Serial.printf("%i%i",gg1[0],gg2[0]);
+#endif
   Serial.setDebugOutput(true);
 
 
@@ -88,10 +90,6 @@ Serial.println("problem.");
 void loop()
 {
   
-
-#ifdef MEMTEST
- int * memleak = new int[2];
-#endif
 #ifdef DEBUGCRASH
 HEAP_CHECK_HARD();
 #endif

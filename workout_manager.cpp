@@ -35,7 +35,7 @@ static Workout current_workout_; // store currently active workout
 void WorkoutManager::begin()
 {
 #ifdef HUB75EBABLE
-  setupHUB75();
+  //setupHUB75();
 #endif
 #ifdef DEBUGCRASH
 Serial.println("hub75");
