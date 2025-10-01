@@ -15,13 +15,13 @@ void WebUI::begin()
     }
 
     // Bring up networking; all routes and SSE are owned by AppNetwork
-    AppNetwork::begin();
     NetworkSetup::begin();
 }
 
 void WebUI::loop()
 {    
     NetworkSetup::loop();
+    AppNetwork::loop();
     static uint32_t t0 = millis();
     if (millis() - t0 > 2000)
     {

@@ -5,6 +5,14 @@
 #include <ArduinoJson.h>
 #include "workout_manager.h"
 #include "workout_storage.h"
+#define WEBSERVERENABLED
+
+#ifdef WEBSERVERENABLED
+#include <queue>
+#include <mutex>
+static std::queue<std::pair<String,String>> s_evtQueue; // (event, json)
+static portMUX_TYPE s_evtMux = portMUX_INITIALIZER_UNLOCKED;
+#endif
 
 #ifdef WEBSERVERENABLED
 /* Internal singletons */
@@ -12,10 +20,14 @@ static AsyncWebServer g_server(80);
 static AsyncEventSource g_sse("/events");
 #endif
 
+
+
 namespace AppNetwork
 {
 
+
 #ifdef WEBSERVERENABLED
+bool initialized = false;
 static const uint32_t maxJsonSize = 1024 * 8;
 
 // helper: send JSON
@@ -86,7 +98,7 @@ static void addCaptivePortalRoutes()
 }
 #endif
 
-void begin()
+void setup()
 {
 #ifdef WEBSERVERENABLED
   // Ensure SSE handler is present
@@ -257,6 +269,7 @@ void begin()
 
   // Start server
   g_server.begin();
+  initialized=true;
   #endif
 }
 
@@ -265,12 +278,35 @@ bool connected()
   return NetworkSetup::conn().ethHasIp() || NetworkSetup::conn().wifiHasIp();
 }
 
-void push_event(const char *e, const char *j)
-{
+
+
+void push_event(const char* e, const char* j) {
 #ifdef WEBSERVERENABLED
-  g_sse.send(j, e);
-  #endif
+  portENTER_CRITICAL(&s_evtMux);
+  s_evtQueue.emplace(e ? e : "", j ? j : "");
+  portEXIT_CRITICAL(&s_evtMux);
+#endif
 }
 
+
+void loop() {
+#ifdef WEBSERVERENABLED
+if(!initialized)
+{
+  if(!connected())
+    return;
+    setup();
+}
+  // drain on server task / main loop context
+  while (true) {
+    String evt, js;
+    portENTER_CRITICAL(&s_evtMux);
+    if (s_evtQueue.empty()) { portEXIT_CRITICAL(&s_evtMux); break; }
+    auto p = s_evtQueue.front(); s_evtQueue.pop();
+    portEXIT_CRITICAL(&s_evtMux);
+    g_sse.send(p.second.c_str(), p.first.isEmpty() ? nullptr : p.first.c_str());
+  }
+#endif
+}
 
 } // namespace AppNetwork

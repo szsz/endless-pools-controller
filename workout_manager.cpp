@@ -4,6 +4,7 @@
 #include "swim_machine.h"
 #include "web_ui.h"
 #include <ArduinoJson.h>
+//#define HUB75EBABLE
 #ifdef HUB75EBABLE
 #include "hub75.h"
 #endif

@@ -2,6 +2,12 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+#define USE_OTA
+#ifdef USE_OTA
+#include <ArduinoOTA.h>
+#include "otapassword.h"
+#endif
+
 
 // Define global instances here so there's a single definition across the program.
 ConnectionManager g_conn(HOSTNAME, SOFT_AP_SSID, SOFT_AP_PASS);
@@ -70,7 +76,33 @@ void NetworkSetup::begin() {
   // Load saved Wi‑Fi credentials (if any) and start connection manager
   g_conn.begin();
   NetworkSetup::applyWifiConfigFromFile();
+  
+#ifdef USE_OTA
+  // Initialize Arduino OTA
+  ArduinoOTA.setHostname(HOSTNAME);
+  ArduinoOTA.setPassword(OTA_PASSWORD);
+  ArduinoOTA
+    .onStart([]() {
+      Serial.println("OTA: Start");
+    })
+    .onEnd([]() {
+      Serial.println("OTA: End");
+    })
+    .onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("OTA: Progress: %u%%\n", (progress * 100) / total);
+    })
+    .onError([](ota_error_t error) {
+      Serial.printf("OTA: Error[%u]\n", error);
+    });
+  ArduinoOTA.begin();
+  Serial.println("OTA: Ready (port 3232)");  
+#endif
 }
 void NetworkSetup::loop() {
   g_conn.loop();
+   
+#ifdef USE_OTA
+  // OTA handler
+  ArduinoOTA.handle();
+#endif
 }
