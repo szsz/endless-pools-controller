@@ -4,7 +4,7 @@
 #include "swim_machine.h"
 #include "web_ui.h"
 #include <ArduinoJson.h>
-#define HUB75EBABLE
+//#define HUB75EBABLE
 #ifdef HUB75EBABLE
 #include "hub75.h"
 #endif
@@ -83,6 +83,11 @@ void WorkoutManager::tick()
 {
   if(!s_active){
 #ifdef HUB75EBABLE
+static uint32_t prev2 =0;
+  uint32_t now = millis();
+  if(now > 250 && now<prev2+50)
+    return;
+  prev2 = now;
     drawSwimmerAnimationTick();
 #endif
   }

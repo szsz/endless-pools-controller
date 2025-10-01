@@ -335,7 +335,12 @@ private:
       m_STAstartuptimeputUntil = millis() + 5000;
       Serial.println("starting STA...");
       printWifiMode();
+      delay(20);
       WiFi.enableSTA(true);
+      printWifiMode();
+      delay(20);
+      printWifiMode();
+      delay(20);
       WiFi.begin(m_staSsid.c_str(), m_staPass.c_str());
       printWifiMode();
       Serial.printf("STA started: SSID=%s",

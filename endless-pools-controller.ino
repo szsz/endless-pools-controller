@@ -1,4 +1,4 @@
-//#define NOUDPTEST
+#define NOUDPTEST
 #define SWIMMACHINE
 
 #define DEBUGCRASH
@@ -28,9 +28,13 @@ inline void heapCheckHardImpl(const char* file, int line) {
 
 #ifdef SWIMMACHINE
 #include "swim_machine.h"
+#ifdef WORKOUTMANAGER
 #include "workout_manager.h"
 #endif
+#endif
+#ifdef WEBUI
 #include "web_ui.h"
+#endif
 
 //#define MEMTEST
 #ifdef MEMTEST
@@ -49,8 +53,10 @@ void setup()
 Serial.println("a");
 HEAP_CHECK_HARD();
 #endif
+#ifdef WEBUI
   WebUI::begin();            // Wi-Fi + HTTP server
   Serial.println("web ui begin done");
+#endif
 
   
 #ifdef DEBUGCRASH
@@ -61,8 +67,10 @@ HEAP_CHECK_HARD();
 #ifdef SWIMMACHINE
   SwimMachine::begin(WebUI::push_network_event);   // initialise UDP + state machine with function pointer
   Serial.println("swim machine begin done");
+  #ifdef WORKOUTMANAGER
   WorkoutManager::begin();   // load saved workouts & prefs
   Serial.println("workout manager begin done");
+  #endif
   #endif
   
 #ifdef DEBUGCRASH
@@ -79,11 +87,18 @@ void loop()
 #ifdef MEMTEST
  int * memleak = new int[2];
 #endif
+#ifdef DEBUGCRASH
+HEAP_CHECK_HARD();
+#endif
+#ifdef WEBUI
   WebUI::loop();             // handles AsyncEventSource pings
-
+#endif
 
 #ifdef SWIMMACHINE
+
+#ifdef WORKOUTMANAGER
   WorkoutManager::tick();    // 1 Hz countdown
+#endif
   SwimMachine::tick();       // drive swim-machine protocol
 #endif
   static uint32_t lastMemLogMs = 0;
@@ -100,5 +115,5 @@ void loop()
                   (unsigned)heapMaxAlloc, (unsigned)heapMinFree);
   }
 
-  delay(49);
+  delay(1);
 }
