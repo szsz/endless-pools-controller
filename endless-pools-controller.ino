@@ -1,7 +1,9 @@
 #define NOUDPTEST
 #define SWIMMACHINE
+#define WORKOUTMANAGER
 
 #define DEBUGCRASH
+#define WEBUI
 
 
 
@@ -65,8 +67,11 @@ HEAP_CHECK_HARD();
 #endif
   
 #ifdef SWIMMACHINE
-  SwimMachine::begin(WebUI::push_network_event);   // initialise UDP + state machine with function pointer
+  SwimMachine::begin();   // initialise UDP + state machine
   Serial.println("swim machine begin done");
+  #ifdef WEBUI
+  SwimMachine::setPushNetworkEvent(WebUI::push_network_event);
+  #endif
   #ifdef WORKOUTMANAGER
   WorkoutManager::begin();   // load saved workouts & prefs
   Serial.println("workout manager begin done");

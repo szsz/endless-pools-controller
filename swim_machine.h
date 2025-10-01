@@ -23,7 +23,8 @@ namespace SwimMachine
     };
 
   /* -------- public API ------------------------------------------- */
-  void begin(void (*push_network_event)(const uint8_t *data, size_t len)); // call in setup()
+  void begin(); // call in setup()
+  void setPushNetworkEvent(void (*push_network_event)(const uint8_t *data, size_t len)); // set network event callback
   void loadWorkout(const std::vector<Segment> &); // copy full list
   bool start();                                   // begin playback
   void pause();                                   // toggle pause/resume

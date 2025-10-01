@@ -206,10 +206,8 @@ static void sendPkt()
 /* =================================================================
  *                    P U B L I C   A P I
  * ================================================================= */
-void SwimMachine::begin(void (*push_network_event)(const uint8_t *data, size_t len))
+void SwimMachine::begin()
 {
-  push_network_event_func = push_network_event;
-
   // Subscribe UDP senders to connection changes so they rebind automatically
   NetworkSetup::conn().subscribe([](bool ethHasIp, bool wifiHasIp, bool softApActive) {
     mcast.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
@@ -243,6 +241,12 @@ void SwimMachine::begin(void (*push_network_event)(const uint8_t *data, size_t l
   // Initialize sockets (rebinding handled by connection changes)
   mcast.begin(multicastAddr, multicastPort, 45654); // bind to group port
   ctrl.begin(peer_ip, PEER_PORT, 40000);            // distinct local port to avoid conflict
+}
+
+/* Set network event callback */
+void SwimMachine::setPushNetworkEvent(void (*push_network_event)(const uint8_t *data, size_t len))
+{
+  push_network_event_func = push_network_event;
 }
 
 /* deep-copy caller’s data so it can go out of scope */
