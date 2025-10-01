@@ -39,7 +39,7 @@ static bool require_id(AsyncWebServerRequest *r, String &id)
 static void serve_index(AsyncWebServerRequest *req)
 {
   // When only SoftAP is active (no STA/Ethernet), redirect to Wi-Fi setup page
-  if (g_conn.softApActive() && !connected())
+  if (NetworkSetup::conn().softApActive() && !connected())
   {
     req->redirect("/wifi");
     return;
@@ -88,9 +88,6 @@ static void addCaptivePortalRoutes()
 
 void begin()
 {
-  // Load saved Wi‑Fi credentials (if any) and start connection manager
-  g_conn.begin();
-  NetworkSetup::applyWifiConfigFromFile();
 #ifdef WEBSERVERENABLED
   // Ensure SSE handler is present
   g_server.addHandler(&g_sse);
@@ -243,7 +240,7 @@ void begin()
                 }
                 uint32_t sec = r->getParam("seconds")->value().toInt();
                 uint32_t ms = sec * 1000u;
-                g_conn.forceSoftAP(ms);
+                NetworkSetup::conn().forceSoftAP(ms);
                 r->send(200, "text/plain", "OK"); });
 
   g_server.on("/api/force_sta", HTTP_POST, [](AsyncWebServerRequest *r)
@@ -255,7 +252,7 @@ void begin()
                 }
                 uint32_t sec = r->getParam("seconds")->value().toInt();
                 uint32_t ms = sec * 1000ull;
-                g_conn.forceSTA(ms);
+                NetworkSetup::conn().forceSTA(ms);
                 r->send(200, "text/plain", "OK"); });
 
   // Start server
@@ -265,7 +262,7 @@ void begin()
 
 bool connected()
 {
-  return g_conn.ethHasIp() || g_conn.wifiHasIp();
+  return NetworkSetup::conn().ethHasIp() || NetworkSetup::conn().wifiHasIp();
 }
 
 void push_event(const char *e, const char *j)

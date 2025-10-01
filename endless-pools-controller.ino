@@ -1,11 +1,12 @@
 #define NOUDPTEST
 
+
 #include <Arduino.h>
+#ifdef SWIMMACHINE
 #include "swim_machine.h"
 #include "workout_manager.h"
+#endif
 #include "web_ui.h"
-#include "app_network.h"
-#include "NetworkSetup.h"
 #ifdef USE_OTA
 #include <ArduinoOTA.h>
 #include "otapassword.h"
@@ -48,10 +49,12 @@ void setup()
   Serial.println("OTA: Ready (port 3232)");  
 #endif
   
+#ifdef SWIMMACHINE
   SwimMachine::begin(WebUI::push_network_event);   // initialise UDP + state machine with function pointer
   Serial.println("swim machine begin done");
   WorkoutManager::begin();   // load saved workouts & prefs
   Serial.println("workout manager begin done");
+  #endif
 }
 
 void loop()
@@ -61,16 +64,17 @@ for(int i =0;i<100;i++)
   meml.push_back(1);
   g[0]++;
 #endif
-  g_conn.loop();             // enforce connection policy and SoftAP control
   WebUI::loop();             // handles AsyncEventSource pings
   
 #ifdef USE_OTA
   // OTA handler
   ArduinoOTA.handle();
 #endif
+
+#ifdef SWIMMACHINE
   WorkoutManager::tick();    // 1 Hz countdown
   SwimMachine::tick();       // drive swim-machine protocol
-
+#endif
   static uint32_t lastMemLogMs = 0;
   uint32_t now = millis();
   if (now - lastMemLogMs >= 10000) {

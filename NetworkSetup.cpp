@@ -3,6 +3,8 @@
 // Define global instances here so there's a single definition across the program.
 ConnectionManager g_conn(HOSTNAME, SOFT_AP_SSID, SOFT_AP_PASS);
 
+ConnectionManager& NetworkSetup::conn() { return g_conn; }
+
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
@@ -74,6 +76,3 @@ void NetworkSetup::begin() {
 void NetworkSetup::loop() {
   g_conn.loop();
 }
-
-
-

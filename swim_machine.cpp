@@ -211,12 +211,12 @@ void SwimMachine::begin(void (*push_network_event)(const uint8_t *data, size_t l
   push_network_event_func = push_network_event;
 
   // Subscribe UDP senders to connection changes so they rebind automatically
-  g_conn.subscribe([](bool ethHasIp, bool wifiHasIp, bool softApActive) {
+  NetworkSetup::conn().subscribe([](bool ethHasIp, bool wifiHasIp, bool softApActive) {
     mcast.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
     ctrl.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
   });
   // Ensure UDP sockets are unbound before STA disconnects
-  g_conn.subscribePreWifiStop([]() {
+  NetworkSetup::conn().subscribePreWifiStop([]() {
     mcast.unbind();
     ctrl.unbind();
   });

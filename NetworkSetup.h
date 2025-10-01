@@ -29,12 +29,14 @@ static const char* HOSTNAME = "swimmachine";
 
 #include "ConnectionManager.h"
 
-/* Global managers (defined in NetworkSetup.cpp) */
-extern ConnectionManager g_conn;
+/* Global managers are defined privately in NetworkSetup.cpp; access via NetworkSetup::conn() */
 
 /* Network utility functions */
 class NetworkSetup {
 public:
+  // Access the global ConnectionManager instance
+  static ConnectionManager& conn();
+
   // Apply WiFi config from LittleFS wifi_config.json if present
   static void applyWifiConfigFromFile();
 
