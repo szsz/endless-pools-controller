@@ -240,7 +240,7 @@ private:
       m_forceApUntil = 0;
 
     
-    if(m_STAstartuptimeputUntil && (m_forceSTAUntil > millis()))
+    if(m_STAstartuptimeputUntil && (m_STAstartuptimeputUntil > millis()))
     {
       if(!m_forceAp)
         return false;
@@ -503,16 +503,20 @@ static void onArduinoEvent(arduino_event_id_t event, arduino_event_info_t info)
     Serial.println("Wi-Fi STA Start");
     break;
 
-  case ARDUINO_EVENT_WIFI_STA_CONNECTED:
-    Serial.printf("Wi-Fi STA Connected: SSID=%s, CH=%u, BSSID=",
-                  (const char*)info.wifi_sta_connected.ssid,
-                  info.wifi_sta_connected.channel);
-    for (int i = 0; i < 6; ++i) {
-      Serial.printf("%02X", info.wifi_sta_connected.bssid[i]);
-      if (i < 5) Serial.print(":");
-    }
-    Serial.println();
+  case ARDUINO_EVENT_WIFI_STA_CONNECTED: {
+    // BSSID first (safe)
+    const uint8_t* bssid = info.wifi_sta_connected.bssid;
+
+    // Copy SSID with bound + terminator (32 bytes max on ESP)
+    char ssidBuf[33];
+    memcpy(ssidBuf, info.wifi_sta_connected.ssid, 32);
+    ssidBuf[32] = '\0';
+
+    Serial.printf("Wi-Fi STA Connected: SSID=%s, CH=%u, BSSID=%02X:%02X:%02X:%02X:%02X:%02X\n",
+                  ssidBuf, info.wifi_sta_connected.channel,
+                  bssid[0], bssid[1], bssid[2], bssid[3], bssid[4], bssid[5]);
     break;
+  }
 
   case ARDUINO_EVENT_WIFI_STA_GOT_IP:
     s_instance->setWifiHasIp(true);

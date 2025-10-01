@@ -14,8 +14,6 @@
 
 #define MEMTEST
 #ifdef MEMTEST
-#include<vector>
-std::vector<int> meml;
 static byte g[180000];
 static byte _h[40000];
 #endif
@@ -60,8 +58,8 @@ void setup()
 void loop()
 {
 #ifdef MEMTEST
+ int * memleak = new int[2];
 for(int i =0;i<100;i++)
-  meml.push_back(1);
   g[0]++;
 #endif
   WebUI::loop();             // handles AsyncEventSource pings
