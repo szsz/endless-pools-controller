@@ -355,7 +355,8 @@ private:
         Serial.println("Disabling STA...");
         // Notify subscribers BEFORE tearing down STA so they can unbind sockets
         notifyPreWifiStop();
-        WiFi.disconnect(false); 
+        WiFi.disconnect(false);
+        Serial.println("Wifi disconnected");
         WiFi.enableSTA(false); 
         printWifiMode();
         Serial.println("STA disabled!");

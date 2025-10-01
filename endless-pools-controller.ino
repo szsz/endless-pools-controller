@@ -6,19 +6,28 @@
 #include "web_ui.h"
 #include "app_network.h"
 #include "NetworkSetup.h"
-#include "hub75.h"
+#ifdef USE_OTA
 #include <ArduinoOTA.h>
 #include "otapassword.h"
+#endif
 
+#define MEMTEST
+#ifdef MEMTEST
+#include<vector>
+std::vector<int> meml;
+static byte g[180000];
+static byte _h[40000];
+#endif
 void setup()
 {
   Serial.begin(115200);
   delay(100);
 
-  setupHUB75();
 
   WebUI::begin();            // Wi-Fi + HTTP server
   Serial.println("web ui begin done");
+  
+#ifdef USE_OTA
   // Initialize Arduino OTA
   ArduinoOTA.setHostname(HOSTNAME);
   ArduinoOTA.setPassword(OTA_PASSWORD);
@@ -36,7 +45,8 @@ void setup()
       Serial.printf("OTA: Error[%u]\n", error);
     });
   ArduinoOTA.begin();
-  Serial.println("OTA: Ready (port 3232)");
+  Serial.println("OTA: Ready (port 3232)");  
+#endif
   
   SwimMachine::begin(WebUI::push_network_event);   // initialise UDP + state machine with function pointer
   Serial.println("swim machine begin done");
@@ -46,16 +56,24 @@ void setup()
 
 void loop()
 {
+#ifdef MEMTEST
+for(int i =0;i<100;i++)
+  meml.push_back(1);
+  g[0]++;
+#endif
   g_conn.loop();             // enforce connection policy and SoftAP control
   WebUI::loop();             // handles AsyncEventSource pings
+  
+#ifdef USE_OTA
   // OTA handler
   ArduinoOTA.handle();
+#endif
   WorkoutManager::tick();    // 1 Hz countdown
   SwimMachine::tick();       // drive swim-machine protocol
 
   static uint32_t lastMemLogMs = 0;
   uint32_t now = millis();
-  if (now - lastMemLogMs >= 1000) {
+  if (now - lastMemLogMs >= 10000) {
     lastMemLogMs = now;
     size_t heapTotal = ESP.getHeapSize();
     size_t heapFree = ESP.getFreeHeap();

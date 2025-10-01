@@ -10,7 +10,7 @@ ConnectionManager g_conn(HOSTNAME, SOFT_AP_SSID, SOFT_AP_PASS);
 
 
 // Apply WiFi config from LittleFS wifi_config.json if present
-void applyWifiConfigFromFile() {
+void NetworkSetup::applyWifiConfigFromFile() {
   if (!LittleFS.exists("/wifi_config.json")) {
     return;
   }
@@ -40,7 +40,7 @@ void applyWifiConfigFromFile() {
 
 
 /* Save Wi-Fi credentials to LittleFS (/wifi_config.json) */
-void saveWifiConfigToFile(const String& ssid, const String& password) {
+void NetworkSetup::saveWifiConfigToFile(const String& ssid, const String& password) {
   StaticJsonDocument<256> doc;
   doc["ssid"] = ssid;
   doc["password"] = password;
@@ -60,8 +60,20 @@ void saveWifiConfigToFile(const String& ssid, const String& password) {
 
 
 // Set new WiFi credentials, delete config file if present
-void setNewWifiCredentials(const String& ssid, const String& password) {
+void NetworkSetup::setNewWifiCredentials(const String& ssid, const String& password) {
   // Save immediately; connection result will arrive via async events
-  saveWifiConfigToFile(ssid, password);
+  NetworkSetup::saveWifiConfigToFile(ssid, password);
   g_conn.setWifiStaCredentials(ssid.c_str(), password.c_str());
 }
+
+void NetworkSetup::begin() {
+  // Load saved Wi‑Fi credentials (if any) and start connection manager
+  g_conn.begin();
+  NetworkSetup::applyWifiConfigFromFile();
+}
+void NetworkSetup::loop() {
+  g_conn.loop();
+}
+
+
+

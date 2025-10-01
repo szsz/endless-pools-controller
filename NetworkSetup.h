@@ -33,8 +33,18 @@ static const char* HOSTNAME = "swimmachine";
 extern ConnectionManager g_conn;
 
 /* Network utility functions */
-void applyWifiConfigFromFile();
+class NetworkSetup {
+public:
+  // Apply WiFi config from LittleFS wifi_config.json if present
+  static void applyWifiConfigFromFile();
 
-void saveWifiConfigToFile(const String& ssid, const String& password);
-// Apply Wi-Fi credentials immediately (can be called anytime)
-void setNewWifiCredentials(const String& ssid, const String& password);
+  static void begin();
+
+  static void loop();
+
+  // Save Wi-Fi credentials to LittleFS (/wifi_config.json)
+  static void saveWifiConfigToFile(const String& ssid, const String& password);
+
+  // Apply Wi-Fi credentials immediately (can be called anytime)
+  static void setNewWifiCredentials(const String& ssid, const String& password);
+};

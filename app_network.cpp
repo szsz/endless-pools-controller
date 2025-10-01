@@ -6,15 +6,16 @@
 #include "workout_manager.h"
 #include "workout_storage.h"
 
-
+#ifdef WEBSERVERENABLED
 /* Internal singletons */
 static AsyncWebServer g_server(80);
 static AsyncEventSource g_sse("/events");
-
+#endif
 
 namespace AppNetwork
 {
 
+#ifdef WEBSERVERENABLED
 static const uint32_t maxJsonSize = 1024 * 8;
 
 // helper: send JSON
@@ -51,7 +52,7 @@ static void serve_index(AsyncWebServerRequest *req)
 }
 
 static void addCaptivePortalRoutes()
-{
+{  
   // Simple portal to set WiFi credentials while in SoftAP mode
   g_server.on("/wifi", HTTP_GET, [](AsyncWebServerRequest *req)
               {
@@ -72,7 +73,7 @@ static void addCaptivePortalRoutes()
       String ssid = req->getParam("ssid", true)->value();
       String password = req->getParam("password", true)->value();
 
-      setNewWifiCredentials(ssid, password);
+      NetworkSetup::setNewWifiCredentials(ssid, password);
 
       req->send(200, "text/html",
                 "<html><body><h1>Saved</h1></body></html>");
@@ -83,13 +84,14 @@ static void addCaptivePortalRoutes()
     } });
 
 }
+#endif
 
 void begin()
 {
   // Load saved Wi‑Fi credentials (if any) and start connection manager
-  applyWifiConfigFromFile();
   g_conn.begin();
-
+  NetworkSetup::applyWifiConfigFromFile();
+#ifdef WEBSERVERENABLED
   // Ensure SSE handler is present
   g_server.addHandler(&g_sse);
 
@@ -258,6 +260,7 @@ void begin()
 
   // Start server
   g_server.begin();
+  #endif
 }
 
 bool connected()
@@ -267,7 +270,9 @@ bool connected()
 
 void push_event(const char *e, const char *j)
 {
+#ifdef WEBSERVERENABLED
   g_sse.send(j, e);
+  #endif
 }
 
 

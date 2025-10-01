@@ -1,12 +1,17 @@
 #include "workout_manager.h"
 #include "web_ui.h"
 #include <ArduinoJson.h>
+#ifdef HUB75EBABLE
 #include "hub75.h"
+#endif
 
 static Workout current_workout_; // store currently active workout
 
 void WorkoutManager::begin()
 {
+#ifdef HUB75EBABLE
+  setupHUB75();
+#endif
   WorkoutStorage::begin();
   // Clear currently active workout on start
   current_workout_ = Workout{};
@@ -65,7 +70,9 @@ static bool s_active = false;
 void WorkoutManager::tick()
 {
   if(!s_active){
+#ifdef HUB75EBABLE
     drawSwimmerAnimationTick();
+#endif
   }
   static uint32_t prev =0;
   uint32_t now = millis();
@@ -113,8 +120,10 @@ void WorkoutManager::push_status_()
 
   String out;
   serializeJson(doc, out);
-  if(s_active){
-    //printJSon(doc);
+  if(s_active){    
+#ifdef HUB75EBABLE
+    printJSon(doc);
+#endif
   }
   WebUI::push_event("status", out.c_str());
   
