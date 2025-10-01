@@ -4,12 +4,33 @@
 #include "swim_machine.h"
 #include "web_ui.h"
 #include <ArduinoJson.h>
-//#define HUB75EBABLE
+#define HUB75EBABLE
 #ifdef HUB75EBABLE
 #include "hub75.h"
 #endif
 
+#define DEBUGCRASH
+#ifdef DEBUGCRASH
+#include "esp_heap_caps.h"
+// two-step stringify
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
+// Use an inline function to keep the macro tiny & safe
+inline void heapCheckHardImpl(const char* file, int line) {
+  if (!heap_caps_check_integrity_all(true)) {
+    Serial.printf("HEAP CORRUPTION DETECTED at %s:%d\n", file, line);
+    abort();
+  }
+}
+
+// This macro is now just a single function-like statement.
+// You must end the call with a semicolon, e.g. HEAP_CHECK_HARD();
+#define HEAP_CHECK_HARD() heapCheckHardImpl(__FILE__, __LINE__)
+#endif
+
 static Workout current_workout_; // store currently active workout
+
 
 void WorkoutManager::begin()
 {
@@ -88,7 +109,7 @@ static uint32_t prev2 =0;
   if(now > 250 && now<prev2+50)
     return;
   prev2 = now;
-    drawSwimmerAnimationTick();
+    //drawSwimmerAnimationTick();
 #endif
   }
   static uint32_t prev =0;
@@ -139,7 +160,7 @@ void WorkoutManager::push_status_()
   serializeJson(doc, out);
   if(s_active){    
 #ifdef HUB75EBABLE
-    printJSon(doc);
+    //printJSon(doc);
 #endif
   }
   WebUI::push_event("status", out.c_str());
