@@ -153,23 +153,23 @@ namespace AppNetwork
   // ---------- SSE: register client ----------
   static void handle_sse()
   {
-    // We’ll reply with headers and keep the socket open.
-    // Use unknown content length so the connection stays alive.
-#if defined(ESP8266)
-    g_server.sendContent(""); // ensure client() is valid
-#endif
-    g_server.setContentLength(CONTENT_LENGTH_UNKNOWN);
-    // Manually craft the response; `send` with empty body sets status+headers but keeps socket.
-    g_server.send(200, "text/event-stream", "");
-
-    // Add standard SSE headers (Cache-Control/Connection) by writing directly:
+    // Manually write the full HTTP response to ensure the connection stays open for SSE.
     WiFiClient client = g_server.client();
-    if (!client.connected())
+    if (!client)
       return;
 
-    // Some stacks need explicit headers if not set by server core; write defensively:
-    client.print(":"
-                 "ok\n\n"); // comment line to satisfy parsers right away
+    // Write minimal SSE-compliant headers and keep the connection alive.
+    client.print(
+        "HTTP/1.1 200 OK\r\n"
+        "Content-Type: text/event-stream\r\n"
+        "Cache-Control: no-cache\r\n"
+        "Connection: keep-alive\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "\r\n");
+
+    // Send an initial comment to kickstart the SSE parser on the client
+    client.print(": ok\n\n");
+    client.flush();
 
     // Record client
     SseClient sc;

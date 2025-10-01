@@ -1,4 +1,4 @@
-#define NOUDPTEST
+//#define NOUDPTEST
 #define SWIMMACHINE
 #define WORKOUTMANAGER
 
