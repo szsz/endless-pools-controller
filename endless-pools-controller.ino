@@ -6,7 +6,7 @@
 #include "web_ui.h"
 #include "app_network.h"
 #include "NetworkSetup.h"
-#include "hub75.h"
+
 #include <ArduinoOTA.h>
 #include "otapassword.h"
 
@@ -15,7 +15,6 @@ void setup()
   Serial.begin(115200);
   delay(100);
 
-  setupHUB75();
 
   WebUI::begin();            // Wi-Fi + HTTP server
   Serial.println("web ui begin done");
@@ -53,7 +52,7 @@ void loop()
   WorkoutManager::tick();    // 1 Hz countdown
   SwimMachine::tick();       // drive swim-machine protocol
 
-  static uint32_t lastMemLogMs = 0;
+  /*static uint32_t lastMemLogMs = 0;
   uint32_t now = millis();
   if (now - lastMemLogMs >= 1000) {
     lastMemLogMs = now;
@@ -65,7 +64,7 @@ void loop()
     Serial.printf("MEM: heap total=%u bytes, used=%u bytes, free=%u bytes, maxAlloc=%u, minFree=%u\n",
                   (unsigned)heapTotal, (unsigned)heapUsed, (unsigned)heapFree,
                   (unsigned)heapMaxAlloc, (unsigned)heapMinFree);
-  }
+  }*/
 
   delay(49);
 }

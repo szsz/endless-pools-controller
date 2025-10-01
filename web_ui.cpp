@@ -34,15 +34,19 @@ void WebUI::push_event(const char *e, const char *j)
 
 void WebUI::push_network_event(const uint8_t *data, size_t len)
 {
-    // Convert data bytes to hex string
+    // Convert data bytes to hex string safely (no repeated sprintf, no overflow)
     static char hexStr[256]; // enough for 128 bytes * 2 + 1
-    size_t pos = 0;
-    for (size_t i = 0; i < len && pos + 2 < sizeof(hexStr); i++)
+    static const char HEX[] = "0123456789ABCDEF";
+    const size_t maxBytes = (sizeof(hexStr) - 1) / 2; // number of bytes we can encode
+    const size_t n = (len < maxBytes) ? len : maxBytes;
+
+    for (size_t i = 0; i < n; ++i)
     {
-        sprintf(&hexStr[pos], "%02X", data[i]);
-        pos += 2;
+        uint8_t b = data[i];
+        hexStr[2 * i]     = HEX[b >> 4];
+        hexStr[2 * i + 1] = HEX[b & 0x0F];
     }
-    hexStr[pos] = '\0';
+    hexStr[2 * n] = '\0';
 
     // Send hex string as JSON string
     String json = String("{\"packet\":\"") + hexStr + "\"}";
