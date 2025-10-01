@@ -175,15 +175,39 @@ void begin()
               nullptr,
               [](AsyncWebServerRequest *r, uint8_t *data, size_t len, size_t index, size_t total)
               {
-                static uint8_t g_buffer[maxJsonSize]; // for reading Json objects
-                if (total > maxJsonSize)
+                static uint8_t g_buffer[maxJsonSize]; // for reading JSON objects
+
+                // Validate total size early (must be non-zero and within limit)
+                if (total == 0 || total > maxJsonSize)
                 {
                   r->send(413, "text/plain", "Too large");
-                  return;
-                } // 413 Payload Too Large
+                  return; // 413 Payload Too Large
+                }
+
+                // Bounds-check each incoming chunk to prevent overflow
+                if (index > maxJsonSize || len > (maxJsonSize - index))
+                {
+                  r->send(413, "text/plain", "Too large");
+                  return; // 413 Payload Too Large (invalid chunk layout)
+                }
+
+                // Copy this chunk into the buffer
                 memcpy(&g_buffer[index], data, len);
-                if (index + len < total) // more coming – return now
+
+                size_t written = index + len;
+
+                // If more chunks are coming, return now
+                if (written < total)
                   return;
+
+                // Final chunk: ensure we've received exactly 'total' bytes
+                if (written != total)
+                {
+                  r->send(400);
+                  return;
+                }
+
+                // Parse and persist
                 Workout w;
                 if (!WorkoutStorage::from_json(g_buffer, total, w))
                 {

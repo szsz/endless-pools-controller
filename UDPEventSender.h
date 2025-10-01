@@ -57,6 +57,7 @@ private:
   bool m_udpReady = false;   // WiFiUDP actually begun (only when network has IP)
   bool m_requestrebind = false; 
   bool m_pauseRebind = false; // set by unbind() to defer rebind until next connection change
+  volatile bool m_deferredStop = false; // request to stop UDP from the main loop context to avoid cross-thread races
 
   enum class PreferredIf { NONE, ETH, WIFI_STA, SOFTAP };
   PreferredIf m_currentIf = PreferredIf::NONE;
