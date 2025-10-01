@@ -1,7 +1,31 @@
 //#define NOUDPTEST
 #define SWIMMACHINE
 
+#define DEBUGCRASH
+
+
+
 #include <Arduino.h>
+
+#ifdef DEBUGCRASH
+#include "esp_heap_caps.h"
+// two-step stringify
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+
+// Use an inline function to keep the macro tiny & safe
+inline void heapCheckHardImpl(const char* file, int line) {
+  if (!heap_caps_check_integrity_all(true)) {
+    Serial.printf("HEAP CORRUPTION DETECTED at %s:%d\n", file, line);
+    abort();
+  }
+}
+
+// This macro is now just a single function-like statement.
+// You must end the call with a semicolon, e.g. HEAP_CHECK_HARD();
+#define HEAP_CHECK_HARD() heapCheckHardImpl(__FILE__, __LINE__)
+#endif
+
 #ifdef SWIMMACHINE
 #include "swim_machine.h"
 #include "workout_manager.h"
@@ -18,10 +42,21 @@ void setup()
   Serial.begin(115200);
   delay(100);
 
+  Serial.setDebugOutput(true);
 
+
+#ifdef DEBUGCRASH
+Serial.println("a");
+HEAP_CHECK_HARD();
+#endif
   WebUI::begin();            // Wi-Fi + HTTP server
   Serial.println("web ui begin done");
+
   
+#ifdef DEBUGCRASH
+Serial.println("a");
+HEAP_CHECK_HARD();
+#endif
   
 #ifdef SWIMMACHINE
   SwimMachine::begin(WebUI::push_network_event);   // initialise UDP + state machine with function pointer
@@ -29,15 +64,23 @@ void setup()
   WorkoutManager::begin();   // load saved workouts & prefs
   Serial.println("workout manager begin done");
   #endif
+  
+#ifdef DEBUGCRASH
+Serial.println("problem?");
+HEAP_CHECK_HARD();
+Serial.println("problem.");
+#endif
 }
 
 void loop()
 {
+  
+
 #ifdef MEMTEST
  int * memleak = new int[2];
 #endif
   WebUI::loop();             // handles AsyncEventSource pings
- 
+
 
 #ifdef SWIMMACHINE
   WorkoutManager::tick();    // 1 Hz countdown

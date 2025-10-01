@@ -13,15 +13,33 @@ void WebUI::begin()
     {
         Serial.println("Failed to mount/format LittleFS, continuing without FS");
     }
-
+#ifdef DEBUGCRASH
+HEAP_CHECK_HARD();
+#endif
     // Bring up networking; all routes and SSE are owned by AppNetwork
     NetworkSetup::begin();
+#ifdef DEBUGCRASH
+Serial.println("webuibegin");
+HEAP_CHECK_HARD();
+#endif
 }
 
 void WebUI::loop()
 {    
+  #ifdef DEBUGCRASH
+Serial.println("webui1");
+HEAP_CHECK_HARD();
+#endif
     NetworkSetup::loop();
+  #ifdef DEBUGCRASH
+Serial.println("webui2");
+HEAP_CHECK_HARD();
+#endif
     AppNetwork::loop();
+  #ifdef DEBUGCRASH
+Serial.println("webui3");
+HEAP_CHECK_HARD();
+#endif
     static uint32_t t0 = millis();
     if (millis() - t0 > 2000)
     {

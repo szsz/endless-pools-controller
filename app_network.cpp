@@ -268,7 +268,16 @@ void setup()
                 r->send(200, "text/plain", "OK"); });
 
   // Start server
+  
+  #ifdef DEBUGCRASH
+Serial.println("begin1");
+HEAP_CHECK_HARD();
+#endif
   g_server.begin();
+  #ifdef DEBUGCRASH
+Serial.println("begin2");
+HEAP_CHECK_HARD();
+#endif
   initialized=true;
   #endif
 }
@@ -281,15 +290,27 @@ bool connected()
 
 
 void push_event(const char* e, const char* j) {
+  #ifdef DEBUGCRASH
+Serial.println("pushevent1");
+HEAP_CHECK_HARD();
+#endif
 #ifdef WEBSERVERENABLED
   portENTER_CRITICAL(&s_evtMux);
   s_evtQueue.emplace(e ? e : "", j ? j : "");
   portEXIT_CRITICAL(&s_evtMux);
 #endif
+  #ifdef DEBUGCRASH
+Serial.println("pushevent2");
+HEAP_CHECK_HARD();
+#endif
 }
 
 
 void loop() {
+  #ifdef DEBUGCRASH
+Serial.println("appnetwork");
+HEAP_CHECK_HARD();
+#endif
 #ifdef WEBSERVERENABLED
 if(!initialized)
 {
@@ -306,6 +327,10 @@ if(!initialized)
     portEXIT_CRITICAL(&s_evtMux);
     g_sse.send(p.second.c_str(), p.first.isEmpty() ? nullptr : p.first.c_str());
   }
+#endif
+  #ifdef DEBUGCRASH
+Serial.println("appnetwork");
+HEAP_CHECK_HARD();
 #endif
 }
 

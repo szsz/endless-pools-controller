@@ -4,7 +4,7 @@
 #include "swim_machine.h"
 #include "web_ui.h"
 #include <ArduinoJson.h>
-//#define HUB75EBABLE
+#define HUB75EBABLE
 #ifdef HUB75EBABLE
 #include "hub75.h"
 #endif
@@ -16,7 +16,15 @@ void WorkoutManager::begin()
 #ifdef HUB75EBABLE
   setupHUB75();
 #endif
+#ifdef DEBUGCRASH
+Serial.println("hub75");
+HEAP_CHECK_HARD();
+#endif
   WorkoutStorage::begin();
+#ifdef DEBUGCRASH
+Serial.println("workoutstorage");
+HEAP_CHECK_HARD();
+#endif
   // Clear currently active workout on start
   current_workout_ = Workout{};
 }
