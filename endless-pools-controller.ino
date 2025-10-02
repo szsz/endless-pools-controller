@@ -1,6 +1,6 @@
 #define NOUDPTEST
 #define SWIMMACHINE
-//#define WORKOUTMANAGER
+#define WORKOUTMANAGER
 
 #define DEBUGCRASH
 #define WEBUI
@@ -54,20 +54,12 @@ Serial.printf("%i%i",gg1[0],gg2[0],gg3[3]);
   Serial.setDebugOutput(true);
 
 
-#ifdef DEBUGCRASH
-Serial.println("a");
-HEAP_CHECK_HARD();
-#endif
 #ifdef WEBUI
   WebUI::begin();            // Wi-Fi + HTTP server
   Serial.println("web ui begin done");
 #endif
 
   
-#ifdef DEBUGCRASH
-Serial.println("a");
-HEAP_CHECK_HARD();
-#endif
   
 #ifdef SWIMMACHINE
   SwimMachine::begin();   // initialise UDP + state machine
@@ -79,20 +71,19 @@ HEAP_CHECK_HARD();
   WorkoutManager::begin();   // load saved workouts & prefs
   Serial.println("workout manager begin done");
   #endif
-  #endif
-  
-#ifdef DEBUGCRASH
-Serial.println("problem?");
-HEAP_CHECK_HARD();
-Serial.println("problem.");
 #endif
+  
+  Serial.println("setup done");
 }
 
 void loop()
 {
+  #ifdef MEMTEST
+  int* g = new int[100];
+  #endif
   
 #ifdef DEBUGCRASH
-HEAP_CHECK_HARD();
+//HEAP_CHECK_HARD();
 #endif
 #ifdef WEBUI
   WebUI::loop();             // handles AsyncEventSource pings

@@ -115,27 +115,7 @@ void begin()
                   req->send(404, "text/plain", "Upload status.html");
                 } });
 
-  g_server.on("/force-ap.html", HTTP_GET, [](AsyncWebServerRequest *req)
-              {
-                if (LittleFS.exists("/force-ap.html"))
-                {
-                  req->send(LittleFS, "/force-ap.html", "text/html");
-                }
-                else
-                {
-                  req->send(404, "text/plain", "Upload force-ap.html");
-                } });
 
-  g_server.on("/force-sta.html", HTTP_GET, [](AsyncWebServerRequest *req)
-              {
-                if (LittleFS.exists("/force-sta.html"))
-                {
-                  req->send(LittleFS, "/force-sta.html", "text/html");
-                }
-                else
-                {
-                  req->send(404, "text/plain", "Upload force-sta.html");
-                } });
 
   g_server.on("/", HTTP_GET, serve_index);
   g_server.serveStatic("/static", LittleFS, "/static/");
@@ -227,30 +207,7 @@ void begin()
                 WorkoutManager::stop();
                 r->send(200); });
 
-  // API: force SoftAP or STA for N seconds
-  g_server.on("/api/force_ap", HTTP_POST, [](AsyncWebServerRequest *r)
-              {
-                if (!r->hasParam("seconds"))
-                {
-                  r->send(400, "text/plain", "missing seconds");
-                  return;
-                }
-                uint32_t sec = r->getParam("seconds")->value().toInt();
-                uint32_t ms = sec * 1000u;
-                ConnectionManager::forceSoftAP(ms);
-                r->send(200, "text/plain", "OK"); });
 
-  g_server.on("/api/force_sta", HTTP_POST, [](AsyncWebServerRequest *r)
-              {
-                if (!r->hasParam("seconds"))
-                {
-                  r->send(400, "text/plain", "missing seconds");
-                  return;
-                }
-                uint32_t sec = r->getParam("seconds")->value().toInt();
-                uint32_t ms = sec * 1000ull;
-                ConnectionManager::forceSTA(ms);
-                r->send(200, "text/plain", "OK"); });
 
   // Start server
   g_server.begin();

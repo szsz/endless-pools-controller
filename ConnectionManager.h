@@ -78,7 +78,7 @@ public:
   }
 
   // Provide/update WiFi STA credentials. Starts STA immediately if allowed.
-  static void setWifiStaCredentials(const char* ssid, const char* pass, uint32_t force_STA_time_ms = 0) {
+  static void setWifiStaCredentials(const char* ssid, const char* pass) {
     if (!ssid || !ssid[0]) {
       Serial.println(F("[WiFi] setWifiStaCredentials: invalid SSID"));
       return;
@@ -86,62 +86,61 @@ public:
     s_staSsid = String(ssid);
     s_staPass = pass ? String(pass) : String();
 
-    if (force_STA_time_ms) {
-      uint32_t until = millis() + force_STA_time_ms;
-      if (timeAfter(until, s_forceStaUntilMs)) s_forceStaUntilMs = until;
-    }
-
-    if (s_enable_sta) {
-      startSTA(); // non-blocking; connection progress observed in loop()
-    }
+   
   }
 
   // Begin networking. Try Ethernet (if enabled), start STA (if creds set), and bring up SoftAP (if enabled).
   static void begin() {
-    if (s_begun) return;
-    s_begun = true;
 
-    // SPI for W5500
+    bool eth_ok = false;
     if (s_enable_eth) {
-      SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI);
-      startEthernet();
+      eth_ok = startEthernet();
     }
 
-    // Start STA if we have credentials
+    // Start STA only if Ethernet is disabled or failed
     if (s_enable_sta && s_staSsid.length() > 0) {
-      startSTA();
+      if (!s_enable_eth || !eth_ok) {
+        if (s_enable_eth && !eth_ok) {
+          Serial.println(F("[WiFi] Ethernet not connected; disabling ETH and starting STA"));
+          ETH.end(); // ensure ETH is disabled before STA
+        }
+        startSTA();
+      } else {
+        Serial.println(F("[WiFi] Ethernet is up; not starting STA"));
+      }
     }
 
-    // Always ensure AP is up when enabled (captive portal + fallback)
+    // SoftAP: only start if no Ethernet IP and no STA connection
     if (s_enable_softap) {
-      startSoftAP();
+      bool eth_ok_now = ethHasIp();
+      bool sta_ok_now = wifiHasIp();
+      if (!eth_ok_now && !sta_ok_now) {
+        startSoftAP();
+      } else {
+        // Ensure AP is not active when other connectivity is present
+        if (s_softApActive) {
+          Serial.println(F("[AP] Disabling SoftAP due to active Ethernet or WiFi STA"));
+          WiFi.softAPdisconnect(true);
+          if (s_enable_sta) {
+            WiFi.mode(WIFI_STA);
+          } else {
+            WiFi.mode(WIFI_OFF);
+          }
+          s_softApActive = false;
+        }
+      }
     }
 
     s_lastStateLogMs = 0;
     s_noActiveSinceMs = 0;
   }
 
-  // Force modes for a period (milliseconds)
-  static void forceSoftAP(uint32_t ms) {
-    uint32_t until = millis() + ms;
-    if (timeAfter(until, s_forceApUntilMs)) s_forceApUntilMs = until;
-    if (s_enable_softap && !(WiFi.getMode() & WIFI_MODE_AP)) {
-      startSoftAP();
-    }
-  }
-  static void forceSTA(uint32_t ms) {
-    uint32_t until = millis() + ms;
-    if (timeAfter(until, s_forceStaUntilMs)) s_forceStaUntilMs = until;
-    if (s_enable_sta && s_staSsid.length() > 0 && WiFi.status() != WL_CONNECTED) {
-      startSTA();
-    }
-  }
 
   // State queries used by the rest of the app
   static bool ethHasIp() {
     if (!s_enable_eth) return false;
     IPAddress ip = ETH.localIP();
-    return ETH.linkUp() && ip.isSet();
+    return ETH.linkUp() && ip != IPAddress(0,0,0,0);
   }
   static bool wifiHasIp() {
     return (WiFi.getMode() & WIFI_MODE_STA) && WiFi.status() == WL_CONNECTED;
@@ -152,21 +151,8 @@ public:
 
   // Periodic maintenance. Also enforces reset if no active interface is present.
   static void loop() {
-    if (!s_begun) return;
 
-    // Honor force windows
     uint32_t now = millis();
-    bool forceAP  = timeBefore(now, s_forceApUntilMs);
-    bool forceSTA = timeBefore(now, s_forceStaUntilMs);
-
-    if (forceAP && s_enable_softap && !(WiFi.getMode() & WIFI_MODE_AP)) {
-      startSoftAP();
-    }
-    if (forceSTA && s_enable_sta && WiFi.status() != WL_CONNECTED && s_staSsid.length() > 0) {
-      // If STA was off, make sure it's on and attempting
-      ensureStaMode();
-      WiFi.begin(s_staSsid.c_str(), s_staPass.c_str());
-    }
 
     // Track current interface state
     bool eth = ethHasIp();
@@ -205,31 +191,18 @@ public:
   }
 
 private:
-  // Utility for unsigned time comparisons that handle wrap properly
-  static bool timeAfter(uint32_t a, uint32_t b) { return (int32_t)(b - a) < 0; }
-  static bool timeBefore(uint32_t a, uint32_t b) { return (int32_t)(a - b) < 0; }
-
-  // Ensure WiFi mode includes STA without dropping AP if it's active
-  static void ensureStaMode() {
-    wifi_mode_t mode = WiFi.getMode();
-    if (mode & WIFI_MODE_AP) {
-      if (!(mode & WIFI_MODE_STA)) {
-        WiFi.mode(WIFI_AP_STA);
-      }
-    } else {
-      if (!(mode & WIFI_MODE_STA)) {
-        WiFi.mode(WIFI_STA);
-      }
-    }
-  }
 
   // Start Ethernet (W5500 over SPI). Non-fatal if it fails; returns success.
   static bool startEthernet() {
     Serial.println(F("[ETH] Initializing SPI and W5500..."));
+    s_ethAttempted = true;
+    s_ethSuccessful = false;
     // SPI.begin should already be called in begin()
 
+      SPI.begin(ETH_SPI_SCK, ETH_SPI_MISO, ETH_SPI_MOSI);
     if (!ETH.begin(ETH_TYPE, ETH_ADDR, ETH_CS, ETH_IRQ, ETH_RST, SPI)) {
       Serial.println(F("[ETH] ETH.begin() failed"));
+      ETH.end();
       return false;
     }
 
@@ -240,14 +213,16 @@ private:
     // Wait briefly for link + DHCP
     uint32_t start = millis();
     while (millis() - start < ETHERNET_BOOT_TIMEOUT_MS) {
-      if (ETH.linkUp() && ETH.localIP().isSet()) {
+      if (ETH.linkUp() && (ETH.localIP() != IPAddress(0,0,0,0))) {
         Serial.print(F("[ETH] Up. IP: ")); Serial.println(ETH.localIP());
+        s_ethSuccessful = true;
         return true;
       }
       delay(100);
     }
 
     Serial.println(F("[ETH] Timeout waiting for link/DHCP"));
+    s_ethSuccessful = false;
     ETH.end();
     return false;
   }
@@ -257,7 +232,6 @@ private:
     Serial.print(F("[WiFi] Connecting to SSID: "));
     Serial.println(s_staSsid);
 
-    ensureStaMode();
     if (s_hostname.length() > 0) {
       WiFi.setHostname(s_hostname.c_str());
     }
@@ -295,13 +269,7 @@ private:
     IPAddress apIP(SOFT_AP_IP_OCTETS);
     IPAddress apMask(SOFT_AP_MASK_OCTETS);
 
-    // Preserve STA if it's enabled
-    wifi_mode_t mode = WiFi.getMode();
-    if (mode & WIFI_MODE_STA) {
-      WiFi.mode(WIFI_AP_STA);
-    } else {
-      WiFi.mode(WIFI_AP);
-    }
+
 
     // Set AP IP before starting AP
     if (!WiFi.softAPConfig(apIP, apIP, apMask)) {
@@ -337,13 +305,14 @@ private:
   inline static bool s_enable_sta    = true;
   inline static bool s_enable_eth    = false;
 
+  inline static bool s_ethAttempted  = false;
+  inline static bool s_ethSuccessful = false;
+
   inline static bool s_softApActive  = false;
   inline static bool s_wifiHasIp     = false;
 
   inline static bool s_begun         = false;
 
-  inline static uint32_t s_forceApUntilMs  = 0;
-  inline static uint32_t s_forceStaUntilMs = 0;
 
   inline static uint32_t s_noActiveSinceMs = 0;
   inline static uint32_t s_lastStateLogMs  = 0;

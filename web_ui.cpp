@@ -1,5 +1,5 @@
 #include "web_ui.h"
-//#define WEBSERVERENABLED
+#define WEBSERVERENABLED
 #ifdef WEBSERVERENABLED
 #include "app_network.h"
 #endif
@@ -16,16 +16,11 @@ void WebUI::begin()
     {
         Serial.println("Failed to mount/format LittleFS, continuing without FS");
     }
-#ifdef DEBUGCRASH
-HEAP_CHECK_HARD();
-#endif
+
     // Bring up networking; all routes and SSE are owned by AppNetwork
     
     NetworkSetup::begin();
-#ifdef DEBUGCRASH
-Serial.println("webuibegin");
-HEAP_CHECK_HARD();
-#endif
+
 
 #ifdef WEBSERVERENABLED
     AppNetwork::begin();
@@ -37,6 +32,7 @@ void WebUI::loop()
     static uint32_t t0 = millis();
     if (millis() - t0 > 2000)
     {
+        NetworkSetup::loop();
         t0 = millis();
         push_event("ping", "{}");
     }
