@@ -1,5 +1,5 @@
 #define NOUDPTEST
-//#define SWIMMACHINE
+#define SWIMMACHINE
 //#define WORKOUTMANAGER
 
 #define DEBUGCRASH

@@ -1,5 +1,8 @@
 #include "web_ui.h"
+//#define WEBSERVERENABLED
+#ifdef WEBSERVERENABLED
 #include "app_network.h"
+#endif
 #include "NetworkSetup.h"
 #include <LittleFS.h>
 
@@ -17,25 +20,20 @@ void WebUI::begin()
 HEAP_CHECK_HARD();
 #endif
     // Bring up networking; all routes and SSE are owned by AppNetwork
+    
     NetworkSetup::begin();
 #ifdef DEBUGCRASH
 Serial.println("webuibegin");
 HEAP_CHECK_HARD();
 #endif
+
+#ifdef WEBSERVERENABLED
+    AppNetwork::begin();
+#endif
 }
 
 void WebUI::loop()
-{    
-  #ifdef DEBUGCRASH
-HEAP_CHECK_HARD();
-#endif
-  #ifdef DEBUGCRASH
-HEAP_CHECK_HARD();
-#endif
-    //AppNetwork::loop(); async
-  #ifdef DEBUGCRASH
-HEAP_CHECK_HARD();
-#endif
+{
     static uint32_t t0 = millis();
     if (millis() - t0 > 2000)
     {
@@ -46,7 +44,9 @@ HEAP_CHECK_HARD();
 
 void WebUI::push_event(const char *e, const char *j)
 {
+#ifdef WEBSERVERENABLED
     AppNetwork::push_event(e, j);
+#endif
 }
 
 void WebUI::push_network_event(const uint8_t *data, size_t len)
@@ -63,5 +63,8 @@ void WebUI::push_network_event(const uint8_t *data, size_t len)
 
     // Send hex string as JSON string
     String json = String("{\"packet\":\"") + hexStr + "\"}";
+    
+#ifdef WEBSERVERENABLED
     AppNetwork::push_event("network", json.c_str());
+#endif
 }

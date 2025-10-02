@@ -6,17 +6,15 @@
 #include "workout_manager.h"
 #include "workout_storage.h"
 
-//#define WEBSERVERENABLED
-#ifdef WEBSERVERENABLED
+
 /* Internal singletons */
 static AsyncWebServer g_server(80);
 static AsyncEventSource g_sse("/events");
-#endif
+
 
 namespace AppNetwork
 {
 
-#ifdef WEBSERVERENABLED
 static const uint32_t maxJsonSize = 1024 * 8;
 
 // helper: send JSON
@@ -40,7 +38,7 @@ static bool require_id(AsyncWebServerRequest *r, String &id)
 static void serve_index(AsyncWebServerRequest *req)
 {
   // When only SoftAP is active (no STA/Ethernet), redirect to Wi-Fi setup page
-  if (NetworkSetup::conn().softApActive())
+  if (ConnectionManager::softApActive())
   {
     req->redirect("/wifi");
     return;
@@ -85,11 +83,9 @@ static void addCaptivePortalRoutes()
     } });
 
 }
-#endif
 
 void begin()
 {
-#ifdef WEBSERVERENABLED
   // Ensure SSE handler is present
   g_server.addHandler(&g_sse);
 
@@ -241,7 +237,7 @@ void begin()
                 }
                 uint32_t sec = r->getParam("seconds")->value().toInt();
                 uint32_t ms = sec * 1000u;
-                NetworkSetup::conn().forceSoftAP(ms);
+                ConnectionManager::forceSoftAP(ms);
                 r->send(200, "text/plain", "OK"); });
 
   g_server.on("/api/force_sta", HTTP_POST, [](AsyncWebServerRequest *r)
@@ -253,24 +249,21 @@ void begin()
                 }
                 uint32_t sec = r->getParam("seconds")->value().toInt();
                 uint32_t ms = sec * 1000ull;
-                NetworkSetup::conn().forceSTA(ms);
+                ConnectionManager::forceSTA(ms);
                 r->send(200, "text/plain", "OK"); });
 
   // Start server
   g_server.begin();
-  #endif
 }
 
 bool connected()
 {
-  return NetworkSetup::conn().ethHasIp() || NetworkSetup::conn().wifiHasIp();
+  return ConnectionManager::ethHasIp() || ConnectionManager::wifiHasIp();
 }
 
 void push_event(const char *e, const char *j)
 {
-#ifdef WEBSERVERENABLED
   g_sse.send(j, e);
-  #endif
 }
 
 

@@ -9,10 +9,6 @@
 #endif
 
 
-// Define global instances here so there's a single definition across the program.
-ConnectionManager g_conn(HOSTNAME, SOFT_AP_SSID, SOFT_AP_PASS);
-
-ConnectionManager& NetworkSetup::conn() { return g_conn; }
 
 
 // Apply WiFi config from LittleFS wifi_config.json if present
@@ -39,7 +35,7 @@ void NetworkSetup::applyWifiConfigFromFile() {
     return;
   }
   Serial.printf("Applying Wi-Fi from file: ssid=%s\n", ssid.c_str());
-  g_conn.setWifiStaCredentials(ssid.c_str(), password.c_str());
+  ConnectionManager::setWifiStaCredentials(ssid.c_str(), password.c_str());
 }
 
 
@@ -69,15 +65,16 @@ void NetworkSetup::saveWifiConfigToFile(const String& ssid, const String& passwo
 void NetworkSetup::setNewWifiCredentials(const String& ssid, const String& password) {
   // Save immediately; connection result will arrive via async events
   NetworkSetup::saveWifiConfigToFile(ssid, password);
-  
+
   // restart
   esp_restart(); 
 }
 
 void NetworkSetup::begin() {
   // Load saved Wi‑Fi credentials (if any) and start connection manager
-  g_conn.begin();
+  ConnectionManager::configure(HOSTNAME, SOFT_AP_SSID, SOFT_AP_PASS);
   NetworkSetup::applyWifiConfigFromFile();
+  ConnectionManager::begin();
   
 #ifdef USE_OTA
   // Initialize Arduino OTA
@@ -101,8 +98,7 @@ void NetworkSetup::begin() {
 #endif
 }
 void NetworkSetup::loop() {
-  g_conn.loop();
-   
+  ConnectionManager::loop();
 #ifdef USE_OTA
   // OTA handler
   ArduinoOTA.handle();
