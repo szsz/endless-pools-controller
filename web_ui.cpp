@@ -27,17 +27,14 @@ HEAP_CHECK_HARD();
 void WebUI::loop()
 {    
   #ifdef DEBUGCRASH
-Serial.println("webui1");
 HEAP_CHECK_HARD();
 #endif
     NetworkSetup::loop();
   #ifdef DEBUGCRASH
-Serial.println("webui2");
 HEAP_CHECK_HARD();
 #endif
-    AppNetwork::loop();
+    //AppNetwork::loop(); async
   #ifdef DEBUGCRASH
-Serial.println("webui3");
 HEAP_CHECK_HARD();
 #endif
     static uint32_t t0 = millis();

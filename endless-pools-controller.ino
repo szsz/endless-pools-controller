@@ -1,6 +1,6 @@
-//#define NOUDPTEST
-#define SWIMMACHINE
-#define WORKOUTMANAGER
+#define NOUDPTEST
+//#define SWIMMACHINE
+//#define WORKOUTMANAGER
 
 #define DEBUGCRASH
 #define WEBUI
@@ -42,13 +42,14 @@ inline void heapCheckHardImpl(const char* file, int line) {
 #ifdef MEMTEST
 static byte gg1[180000];
 static byte gg2[40000];
+static byte gg3[40000];
 #endif
 void setup()
 {
   Serial.begin(115200);
   delay(100);
 #ifdef MEMTEST
-Serial.printf("%i%i",gg1[0],gg2[0]);
+Serial.printf("%i%i",gg1[0],gg2[0],gg3[3]);
 #endif
   Serial.setDebugOutput(true);
 
