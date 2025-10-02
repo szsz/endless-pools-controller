@@ -11,9 +11,9 @@ void UDPEventSender::begin(IPAddress target, uint16_t port, uint16_t localPort) 
 
   this->m_target = target; this->m_port = port;
     if (is_multicast_ip(target) && port != 0) {
-    ok = m_udp.beginMulticast(target, port);
+    m_udp.beginMulticast(target, port);
   } else {
-    ok = m_udp.begin(localPort);
+    m_udp.begin(localPort);
   }
 }
 
@@ -25,9 +25,11 @@ void UDPEventSender::loop() {
   
   static uint8_t buf[1472];
   int len = m_udp.read(buf, sizeof(buf));
-  if (len < 0) return;
+  if (len <= 0) return;
 
   if (m_onReceive) {
+    IPAddress remote = m_udp.remoteIP();
+    uint16_t rport = m_udp.remotePort();
     m_onReceive(buf, (size_t)len, remote, rport);
   }
 }

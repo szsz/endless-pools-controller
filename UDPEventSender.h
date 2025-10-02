@@ -30,6 +30,10 @@ public:
 
 
 private:
+  WiFiUDP   m_udp;
   IPAddress m_target;
   uint16_t  m_port = 0;
+  
+  // Receive callback
+  ReceiveHandler m_onReceive = nullptr;
 };
