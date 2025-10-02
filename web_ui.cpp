@@ -29,7 +29,6 @@ void WebUI::loop()
   #ifdef DEBUGCRASH
 HEAP_CHECK_HARD();
 #endif
-    NetworkSetup::loop();
   #ifdef DEBUGCRASH
 HEAP_CHECK_HARD();
 #endif

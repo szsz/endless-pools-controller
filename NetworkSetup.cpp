@@ -69,7 +69,9 @@ void NetworkSetup::saveWifiConfigToFile(const String& ssid, const String& passwo
 void NetworkSetup::setNewWifiCredentials(const String& ssid, const String& password) {
   // Save immediately; connection result will arrive via async events
   NetworkSetup::saveWifiConfigToFile(ssid, password);
-  g_conn.setWifiStaCredentials(ssid.c_str(), password.c_str());
+  
+  // restart
+  esp_restart(); 
 }
 
 void NetworkSetup::begin() {

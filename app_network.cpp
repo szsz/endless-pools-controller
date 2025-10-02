@@ -40,7 +40,7 @@ static bool require_id(AsyncWebServerRequest *r, String &id)
 static void serve_index(AsyncWebServerRequest *req)
 {
   // When only SoftAP is active (no STA/Ethernet), redirect to Wi-Fi setup page
-  if (NetworkSetup::conn().softApActive() && !connected())
+  if (NetworkSetup::conn().softApActive())
   {
     req->redirect("/wifi");
     return;

@@ -1,6 +1,5 @@
 #include "swim_machine.h"
 #include "UDPEventSender.h"
-#include "NetworkSetup.h"
 #include <vector>
 
 /* ------------ internal state ----------------------------------- */
@@ -208,16 +207,7 @@ static void sendPkt()
  * ================================================================= */
 void SwimMachine::begin()
 {
-  // Subscribe UDP senders to connection changes so they rebind automatically
-  NetworkSetup::conn().subscribe([](bool ethHasIp, bool wifiHasIp, bool softApActive) {
-    mcast.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
-    ctrl.handleConnectionChange(ethHasIp, wifiHasIp, softApActive);
-  });
-  // Ensure UDP sockets are unbound before STA disconnects
-  NetworkSetup::conn().subscribePreWifiStop([]() {
-    mcast.unbind();
-    ctrl.unbind();
-  });
+
 
   // Join multicast group to receive status/acks
   mcast.onReceive([](const uint8_t *data, size_t len, const IPAddress &remote, uint16_t rport) {
