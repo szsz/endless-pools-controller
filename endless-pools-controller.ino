@@ -1,4 +1,4 @@
-#define NOUDPTEST
+//#define NOUDPTEST
 #define SWIMMACHINE
 #define WORKOUTMANAGER
 
@@ -28,17 +28,17 @@ inline void heapCheckHardImpl(const char* file, int line) {
 #define HEAP_CHECK_HARD() heapCheckHardImpl(__FILE__, __LINE__)
 #endif
 
+#ifdef WEBUI
+#include "web_ui.h"
+#endif
 #ifdef SWIMMACHINE
 #include "swim_machine.h"
 #ifdef WORKOUTMANAGER
 #include "workout_manager.h"
 #endif
 #endif
-#ifdef WEBUI
-#include "web_ui.h"
-#endif
 
-#define MEMTEST
+//#define MEMTEST
 #ifdef MEMTEST
 static byte gg1[180000];
 static byte gg2[80000];
@@ -79,7 +79,7 @@ Serial.printf("%i%i",gg1[0],gg2[0],gg3[3]);
 void loop()
 {
   #ifdef MEMTEST
-  int* g = new int[100];
+  int* memleak = new int[100];
   #endif
   
 #ifdef DEBUGCRASH

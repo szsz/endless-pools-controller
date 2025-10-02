@@ -32,8 +32,8 @@ static uint16_t PEER_PORT = 9750;
 // Two UDPEventSender instances:
 // - mcast: joined to multicast group for incoming status/acks
 // - ctrl:  unicast/broadcast for control commands to the swim machine
-static UDPEventSender mcast(multicastAddr, multicastPort);
-static UDPEventSender ctrl(peer_ip, PEER_PORT);
+static UDPEventSender mcast;
+static UDPEventSender ctrl;
 
 /* ------------ helpers: CRC-32 & monotonic tick ------------------ */
 static uint32_t crc32(const uint8_t *d, size_t n)

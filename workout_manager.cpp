@@ -35,7 +35,7 @@ static Workout current_workout_; // store currently active workout
 void WorkoutManager::begin()
 {
 #ifdef HUB75EBABLE
-  //setupHUB75();
+  setupHUB75();
 #endif
 #ifdef DEBUGCRASH
 Serial.println("hub75");
@@ -109,7 +109,7 @@ static uint32_t prev2 =0;
   if(now > 250 && now<prev2+50)
     return;
   prev2 = now;
-    //drawSwimmerAnimationTick();
+    drawSwimmerAnimationTick();
 #endif
   }
   static uint32_t prev =0;
@@ -160,7 +160,7 @@ void WorkoutManager::push_status_()
   serializeJson(doc, out);
   if(s_active){    
 #ifdef HUB75EBABLE
-    //printJSon(doc);
+    printJSon(doc);
 #endif
   }
   WebUI::push_event("status", out.c_str());

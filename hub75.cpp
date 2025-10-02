@@ -10,12 +10,12 @@ static const int PANEL_HEIGHT = 64;
 static const int PANEL_CHAIN  = 1;   // number of chained panels
 
 // User-provided pinout
-static const int PIN_R1  = 33;
-static const int PIN_G1  = 34;
-static const int PIN_B1  = 35;
-static const int PIN_R2  = 36;
+static const int PIN_R1  = 21;
+static const int PIN_G1  = 17;
+static const int PIN_B1  = 16;
+static const int PIN_R2  = 18;
 static const int PIN_G2  = 15;
-static const int PIN_B2  = 38;
+static const int PIN_B2  = 3;
 
 static const int PIN_A   = 40;
 static const int PIN_B   = 41;

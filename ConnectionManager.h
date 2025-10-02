@@ -162,7 +162,7 @@ public:
     s_softApActive = ap;
 
     // Periodic status logging
-    if (now - s_lastStateLogMs >= NET_LOG_THROTTLE_MS) {
+   /* if (now - s_lastStateLogMs >= NET_LOG_THROTTLE_MS) {
       s_lastStateLogMs = now;
       if (eth) {
         Serial.print(F("[NET] Ethernet IP: ")); Serial.println(ETH.localIP());
@@ -173,8 +173,7 @@ public:
       } else {
         Serial.println(F("[NET] No active network interface"));
       }
-    }
-
+    }*/
     // Reset watchdog: restart if no active interface for NO_ACTIVE_RESET_MS
     bool anyActive = eth || sta || ap;
     if (anyActive) {
