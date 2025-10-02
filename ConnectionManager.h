@@ -324,16 +324,14 @@ private:
 
   void startSTA()
   {
-    status_sta=true;
-      m_STAstartuptimeputUntil = millis() + 5000;
-      Serial.println("starting STA...");
-      printWifiMode();
-      WiFi.begin(m_staSsid.c_str(), m_staPass.c_str());
-      printWifiMode();
-      Serial.printf("STA started: SSID=%s",
-                    m_staSsid.c_str());
-      Serial.println();
-    }
+    status_sta = true;
+    m_STAstartuptimeputUntil = millis() + 5000;
+    Serial.println("starting STA...");
+    printWifiMode();
+    WiFi.begin(m_staSsid.c_str(), m_staPass.c_str());
+    printWifiMode();
+    Serial.printf("STA started: SSID=%s", m_staSsid.c_str());
+    Serial.println();
   }
 
   void stopSTA()
