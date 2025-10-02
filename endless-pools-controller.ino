@@ -41,7 +41,7 @@ inline void heapCheckHardImpl(const char* file, int line) {
 #define MEMTEST
 #ifdef MEMTEST
 static byte gg1[180000];
-static byte gg2[40000];
+static byte gg2[80000];
 static byte gg3[40000];
 #endif
 void setup()

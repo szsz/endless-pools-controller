@@ -199,6 +199,7 @@ private:
   bool m_ethHasIp = false;
   bool m_wifiHasIp = false;
   bool m_softApActive = false;
+  bool status_sta = false;
 
   // Optional explicit STA credentials provided by user
   String m_staSsid;
@@ -213,7 +214,7 @@ private:
 
   bool enable_softap = false;
   bool enable_sta = false;
-  bool enable_eth = false;
+  bool enable_eth = false;  
 
   bool need_eth() { return enable_eth; }
   bool need_sta()
@@ -297,14 +298,11 @@ private:
 
   void startSoftAP()
   {
-    if (!(WiFi.getMode() & WIFI_AP))
-    {
       Serial.println("starting SoftAp...");
       printWifiMode();
       IPAddress ap_ip(SOFT_AP_IP_OCTETS);
       IPAddress ap_mask(SOFT_AP_MASK_OCTETS);
 
-      WiFi.enableAP(true);
       WiFi.softAPConfig(ap_ip, ap_ip, ap_mask);
       WiFi.softAP(m_softApSsid.c_str(), m_softApPass.c_str());
       setSoftApActive(true);
@@ -312,35 +310,24 @@ private:
       Serial.printf("SoftAP up: SSID=%s IP=%s\n",
                     m_softApSsid.c_str(), WiFi.softAPIP().toString().c_str());
       Serial.println();
-    }
   }
 
   void stopSoftAP()
   {
-    if (WiFi.getMode() & WIFI_AP)
-    {
       Serial.println("Disabling SoftAP...");
       WiFi.softAPdisconnect(false);
       delay(1);
-      WiFi.enableAP(false);
       printWifiMode();
       Serial.println("SoftAP disabled!");
-    }
+    
   }
 
   void startSTA()
   {
-    if (!(WiFi.getMode() & WIFI_STA))
-    {
+    status_sta=true;
       m_STAstartuptimeputUntil = millis() + 5000;
       Serial.println("starting STA...");
       printWifiMode();
-      delay(20);
-      WiFi.enableSTA(true);
-      printWifiMode();
-      delay(20);
-      printWifiMode();
-      delay(20);
       WiFi.begin(m_staSsid.c_str(), m_staPass.c_str());
       printWifiMode();
       Serial.printf("STA started: SSID=%s",
@@ -351,29 +338,14 @@ private:
 
   void stopSTA()
   {
-    if (WiFi.getMode() & WIFI_STA)
-    {
+    status_sta=false;
       Serial.println("Disabling STA...");
       // Notify subscribers BEFORE tearing down STA so they can unbind sockets
       notifyPreWifiStop();
-      WiFi.disconnect(false);
-      uint32_t t0 = millis();
-      while ((WiFi.status() == WL_CONNECTED) && millis() - t0 < 300)
-      {
-        delay(1); // yield
-      }
-      if (WiFi.status() == WL_CONNECTED)
-        {
-          Serial.println("ERROR Wifi not disconnected within timeout");
-        }
-      else
-      {
-        Serial.println("Wifi disconnected");
-        WiFi.enableSTA(false);
-      }
+      WiFi.disconnect(false);      
       printWifiMode();
       Serial.println("STA disabled!");
-    }
+    
   }
 
   void startEthernet()
@@ -395,20 +367,22 @@ private:
   // - If ETH does not have IP: normal policy (SoftAP only when STA is not connected).
   void ensureApState()
   {
-    if (need_sta())
+    if (need_sta() && !status_sta)
     {
       startSTA();
     }
     else
     {
+      if(status_sta)
       stopSTA();
     }
-    if (need_softap())
+    if (need_softap() && !m_softApActive)
     {
       startSoftAP();
     }
     else
     {
+      if(m_softApActive)
       stopSoftAP();
     }
   }
