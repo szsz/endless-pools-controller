@@ -30,9 +30,9 @@ void WebUI::begin()
 void WebUI::loop()
 {
     static uint32_t t0 = millis();
+    NetworkSetup::loop();
     if (millis() - t0 > 2000)
     {
-        NetworkSetup::loop();
         t0 = millis();
         push_event("ping", "{}");
     }
