@@ -68,7 +68,7 @@ public:
                         const char* softApPass,
                         bool enable_softap = true,
                         bool enable_sta    = true,
-                        bool enable_eth    = false) {
+                        bool enable_eth    = true) {
     s_hostname      = hostname   ? String(hostname)   : String();
     s_softApSsid    = softApSsid ? String(softApSsid) : String();
     s_softApPass    = softApPass ? String(softApPass) : String();

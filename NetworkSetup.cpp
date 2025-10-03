@@ -2,7 +2,7 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
-//#define USE_OTA
+#define USE_OTA
 #ifdef USE_OTA
 #include <ArduinoOTA.h>
 #include "otapassword.h"
