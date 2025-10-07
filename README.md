@@ -89,6 +89,8 @@ Reference: https://www.waveshare.com/wiki/ESP32-S3-ETH
 
 ### Arduino IDE (ESP32-S3-ETH settings)
 
+![ESP32-S3-ETH (Waveshare) W5500 config](ESP32S3ETH%20Waveshare%20W5500%20config.png)
+
 Requirements
 - Arduino IDE 2.x
 - ESP32 boards support by Espressif Systems (Boards Manager). Install “ESP32 by Espressif Systems” (2.0.12 or newer recommended per Waveshare docs).
@@ -104,8 +106,8 @@ Board selection
 Recommended board options for Waveshare ESP32-S3-ETH:
 - USB Mode: Hardware CDC and JTAG
 - USB CDC On Boot: Enabled (needed if board exposes only USB CDC)
-- Flash Size: 16MB
-- Partition Scheme: Huge APP
+- Flash Size: 8MB
+- Partition Scheme: Custom (uses partitions.csv)
 - PSRAM: OPI PSRAM (8MB)
 - CPU Frequency, Upload Speed: defaults are fine unless you need changes
 
@@ -116,14 +118,14 @@ Build and upload (USB)
 
 ### Arduino CLI (FQBN and OTA)
 
-Project helpers included in this repo:
-- `sketch.yaml`: Defines default_fqbn and a profile `esp32s3-eth` with the required options.
-- `scripts/ota-upload.bat`: Windows helper to compile with Arduino CLI and upload via OTA using sketch.yaml (default_fqbn or an explicit profile).
+Helpers:
+- scripts/ota-upload.bat: Windows helper to compile with Arduino CLI and upload via OTA. If you provide a sketch.yaml, the script will read default_fqbn/default_port/ota_password from it; otherwise specify target and options explicitly.
+- scripts/ota-upload.ps1 and scripts/ota_upload.py: alternative helpers for PowerShell/Python.
 
 ESP32-S3 Dev Module FQBN (example)
 - The exact option keys can vary by ESP32 core version. A typical FQBN with the requested settings looks like:
 ```
-esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=huge_app,PSRAM=opi
+esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=8M,PartitionScheme=custom,PSRAM=opi
 ```
 If Arduino CLI reports an error about options, run:
 ```
@@ -146,7 +148,74 @@ scripts\ota-upload.bat swimmachine.local
 ```
 scripts\ota-upload.bat 192.168.1.50 esp32s3-eth
 ```
-- The script uses `sketch.yaml` (default_fqbn or specified profile), builds to `build\arduino`, then uploads over the network using Arduino CLI’s OTA.
+- If `sketch.yaml` is present, the script reads its settings; otherwise pass target/profile explicitly or build first. It builds to `build\arduino`, then uploads over the network using Arduino CLI’s OTA.
+
+---
+
+## Initial Flash (Serial) vs Subsequent OTA Updates
+
+Why a first serial flash?
+- OTA (espota.py/Arduino OTA) only replaces the application image; it does not change the flash partition table.
+- This project uses a custom partitions.csv for 8MB flash with 3MB APP (dual slots) and 1.5MB SPIFFS.
+- Therefore, you must perform one serial/USB flash to install the custom partition scheme. After that, use OTA for future updates.
+
+First flash (serial) options
+
+Option A – Arduino IDE (USB)
+1. Tools > Board: esp32 > ESP32S3 Dev Module
+2. Tools options (recommended for Waveshare ESP32-S3-ETH):
+   - USB Mode: Hardware CDC and JTAG
+   - USB CDC On Boot: Enabled
+   - Flash Size: 8MB
+   - Partition Scheme: Custom (uses partitions.csv)
+   - PSRAM: OPI PSRAM (8MB)
+3. Connect the board via USB, select the COM port under Tools > Port.
+4. Sketch > Upload.
+5. Optional: Upload the contents of the `data/` folder to LittleFS using the LittleFS upload tool (see “Uploading Data Files” below).
+
+Option B – Windows helper scripts (USB serial)
+- Batch:
+  - scripts\ota-upload.bat COM5
+- PowerShell:
+  - .\scripts\ota-upload.ps1 COM5
+Notes:
+- Replace COM5 with your actual serial port.
+- These helpers pass the required FQBN options (FlashSize=8M, PartitionScheme=custom) so the custom partition table is flashed.
+
+Option C – Arduino CLI (USB serial)
+- Compile with custom FQBN and export binaries:
+  - arduino-cli compile -b "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=8M,PartitionScheme=custom,PSRAM=opi" --build-path build\arduino --export-binaries .
+- Upload over serial (replace COM5 with your port):
+  - arduino-cli upload -p COM5 -b "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=8M,PartitionScheme=custom,PSRAM=opi" --input-dir build\arduino
+
+Subsequent OTA updates (after first serial flash)
+
+Option A – Windows batch helper
+- scripts\ota-upload.bat 192.168.1.50
+- scripts\ota-upload.bat swimmachine.local
+- Optional profile (if using sketch.yaml profiles):
+  - scripts\ota-upload.bat 192.168.1.50 esp32s3-eth
+
+Option B – PowerShell helper
+- .\scripts\ota-upload.ps1 192.168.1.50
+- .\scripts\ota-upload.ps1 swimmachine.local
+
+Option C – Python helper (builds if needed, then OTA uploads)
+- python scripts\ota_upload.py --target 192.168.1.50 --build
+- python scripts\ota_upload.py --target swimmachine.local --build
+- If a binary already exists (build\arduino\*.ino.bin), you can omit --build.
+
+Passwords and defaults
+- OTA service port: 3232 (default).
+- OTA password:
+  - Batch/PowerShell helpers read ota_password from sketch.yaml (if present) and also inject it at compile time.
+  - Python helper accepts --password or reads from sketch.yaml if present; when building it injects -DOTA_PASSWORD="...".
+- Target host:
+  - If not provided, helpers try to use default_port from sketch.yaml.
+
+Troubleshooting
+- If OTA fails immediately: verify the device is reachable (IP/mDNS), the OTA password matches, and the service port (3232) is open on your network.
+- If the device was previously flashed with a different partition table: perform one serial upload again to reapply the custom table, then resume OTA.
 
 ---
 
@@ -230,8 +299,8 @@ Notes
 First Boot or WiFi Change
 - On boot, the device tries to connect using stored WiFi credentials (saved in LittleFS).
 - If connection fails within ~15 seconds, it starts AP (Access Point) mode for configuration.
-- Connect your phone or computer to the WiFi network named `SwimMachine_Config`.
-- Open a browser and go to http://192.168.0.3
+- Connect your phone or computer to the WiFi network named `swimmachine` (password `12345678`).
+- Open a browser and go to http://192.168.4.1
 - Enter your WiFi SSID and password, then save. The device will reboot and connect to your network.
 
 Normal Operation
@@ -277,36 +346,22 @@ Android
 
 ---
 
-## Viewer and UDP Monitor
 
-This project includes two tools for monitoring UDP messages from the swim machine: a Node.js-based viewer and a web-based status page.
+
+## Viewer and UDP Monitor
 
 ### Node.js Viewer
 
-The `viewer` directory contains a Node.js application that listens for UDP messages from the swim machine and provides a real-time web interface for monitoring and analyzing these messages.
-
-Features
-- Receives and parses UDP packets on ports 9750 and 45654.
-- Decodes commands using `commands.csv`.
-- Serves a web interface via Express and Socket.IO for real-time updates.
-- Displays message details such as command, parameters, timestamps, and more.
-
-Usage
-1. Install dependencies:
-   ```sh
-   cd viewer
-   npm install
-   ```
-2. Start the server:
-   ```sh
-   node server.js
-   ```
-3. Open http://localhost:3000 in your browser to view the live UDP monitor.
-
-File Overview
-- `server.js`: Main server code (Express, UDP, Socket.IO).
-- `commands.csv`: Command code mappings.
-- `public/`: Static files for the web interface.
+- Install Node.js 18+ and dependencies:
+  - cd viewer
+  - npm install
+- Run the viewer:
+  - node server.js
+- Open http://localhost:3000
+- It listens for UDP on:
+  - 9750 (44-byte control messages)
+  - 45654 (111-byte status messages)
+  These are parsed and streamed to the browser via Socket.IO.
 
 ### Web UI Status Page
 
