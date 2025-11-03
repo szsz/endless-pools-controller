@@ -69,6 +69,7 @@ static uint8_t lastSentIdx2 = 0xC5; // so first increment is 0x64
 static uint8_t idx2Counter = 0xC5;  // so first increment is 0x64
 static bool readyToSendNext = true;
 static bool resendLastPacket = false;
+static uint8_t lastReceivedCmdByte = 0;
 
 static void queuePkt(uint16_t command, uint16_t param = 0)
 {
@@ -156,13 +157,12 @@ static void sendPkt()
     return;
 
   const size_t N = sizeof(messagequeue) / sizeof(messagequeue[0]);
-  const Msg &msg = messagequeue[q_head];
 
   // do not send message when turning off or slowing down
-  if (/* command byte */ ((uint8_t)(msg.cmd & 0xFF) == 0x4E) ||
-      ((uint8_t)(msg.cmd & 0xFF) == 0x0E) ||
-      ((uint8_t)(msg.cmd & 0xFF) == 0x4A) ||
-      ((uint8_t)(msg.cmd & 0xFF) == 0x0A))
+  if ((lastReceivedCmdByte == 0x4E) ||
+      (lastReceivedCmdByte == 0x0E) ||
+      (lastReceivedCmdByte == 0x4A) ||
+      (lastReceivedCmdByte == 0x0A))
     return;
 
   // Only send if ready or if a resend is required
@@ -240,6 +240,7 @@ void SwimMachine::begin(void (*push_network_event)(const uint8_t *data, size_t l
     // Process only expected 111-byte packets
     if (len == 111)
     {
+      lastReceivedCmdByte = data[3];
       confirmPacket(data[2]);
 
       if (push_network_event_func)
