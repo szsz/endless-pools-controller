@@ -13,9 +13,8 @@ Tested hardware: Waveshare ESP32-S3-ETH (W5500 over SPI). See board details and 
 
 - [Introduction](#introduction)
 - [Swim Machine Protocol](#swim-machine-protocol)
-- [Deploying to ESP32-S3 (Arduino IDE/CLI)](#deploying-to-esp32-s3-arduino-idecli)
+- [Deploying to ESP32-S3 (Arduino IDE)](#deploying-to-esp32-s3-arduino-ide)
   - [Arduino IDE (ESP32-S3-ETH settings)](#arduino-ide-esp32-s3-eth-settings)
-  - [Arduino CLI (FQBN and OTA)](#arduino-cli-fqbn-and-ota)
 - [Uploading Data Files (Web UI, Workouts, etc.)](#uploading-data-files-web-ui-workouts-etc)
 - [Over-the-Air (OTA) Updates](#over-the-air-ota-updates)
 - [User Manual](#user-manual)
@@ -65,7 +64,7 @@ The swim machine is controlled via a state machine and communicates over UDP. Th
 
 ---
 
-## Deploying to ESP32-S3 (Arduino IDE/CLI)
+## Deploying to ESP32-S3 (Arduino IDE)
 
 Hardware (tested)
 - Waveshare ESP32-S3-ETH (ESP32-S3R8 with 16MB flash, 8MB PSRAM, W5500 SPI Ethernet)
@@ -110,43 +109,9 @@ Recommended board options for Waveshare ESP32-S3-ETH:
 - CPU Frequency, Upload Speed: defaults are fine unless you need changes
 
 Build and upload (USB)
-- Open `endless-pools-controller.ino`
-- Select board and port
-- Click Upload
-
-### Arduino CLI (FQBN and OTA)
-
-Project helpers included in this repo:
-- `sketch.yaml`: Defines default_fqbn and a profile `esp32s3-eth` with the required options.
-- `scripts/ota-upload.bat`: Windows helper to compile with Arduino CLI and upload via OTA using sketch.yaml (default_fqbn or an explicit profile).
-
-ESP32-S3 Dev Module FQBN (example)
-- The exact option keys can vary by ESP32 core version. A typical FQBN with the requested settings looks like:
-```
-esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=16M,PartitionScheme=huge_app,PSRAM=opi
-```
-If Arduino CLI reports an error about options, run:
-```
-arduino-cli board details esp32:esp32:esp32s3
-```
-to list the supported option names for your installed core version, then adjust `sketch.yaml` accordingly (edit default_fqbn or the `esp32s3-eth` profile).
-
-Using the helper script (Windows)
-- Prerequisite: Install Arduino CLI and the ESP32 core (e.g. `arduino-cli core install esp32:esp32`).
-- Optional: Configure your WiFi/Ethernet so the device is reachable by hostname or IP (default OTA service port: 3232).
-- To compile and OTA upload in one step:
-```
-scripts\ota-upload.bat 192.168.1.50
-```
-- If your device advertises mDNS and your network supports it, you can use:
-```
-scripts\ota-upload.bat swimmachine.local
-```
-- Optionally select the explicit profile defined in `sketch.yaml`:
-```
-scripts\ota-upload.bat 192.168.1.50 esp32s3-eth
-```
-- The script uses `sketch.yaml` (default_fqbn or specified profile), builds to `build\arduino`, then uploads over the network using Arduino CLI’s OTA.
+1. Open `endless-pools-controller.ino`
+2. Select the board and the correct COM port
+3. Click Upload
 
 ---
 
@@ -180,42 +145,20 @@ Requirements
 - Your computer must be on the same network.
 
 Local secret setup
-- Set `ota_password` in `sketch.yaml`. This value is passed to Arduino CLI for OTA and injected into the firmware at build time.
-  - WARNING: This stores a secret in plain text in your repo. Consider rotating it regularly or moving secrets to a private repo/CI environment.
-- Optional fallback for local builds: the code still contains `otapassword.h`. If no build-time `OTA_PASSWORD` is injected, the firmware falls back to the value from this header:
+- The firmware expects a local header file `otapassword.h` that defines the OTA password:
 ```c++
 #pragma once
 #ifndef OTA_PASSWORD
 #define OTA_PASSWORD "REPLACE_WITH_A_LONG_RANDOM_SECRET"
 #endif
 ```
+- Create this file next to the sketch (do not commit it) and set a strong password.
 
-Arduino IDE
-1. Power the device and wait for it to connect to the network.
+Arduino IDE (OTA from Network Port)
+1. Power the device and wait for it to connect to the network (watch serial at 115200 for logs if needed).
 2. In Arduino IDE: Tools > Port, select the Network Port for `swimmachine` (or the device’s IP).
-3. Click Upload. When prompted for a password, enter the value of `OTA_PASSWORD` from your local `otapassword.h`.
+3. Click Upload. When prompted for a password, enter the value of `OTA_PASSWORD` you placed in `otapassword.h`.
 4. The device will report progress over the network and reboot when done.
-
-Arduino CLI (Windows helper)
-- With `sketch.yaml` configured, compile and OTA upload in one step (uses `default_port` and `ota_password` from `sketch.yaml`):
-```
-scripts\ota-upload.bat
-```
-- You can also specify the target and/or profile explicitly:
-```
-scripts\ota-upload.bat swimmachine.local
-scripts\ota-upload.bat 192.168.1.50 esp32s3-eth
-```
-- The script reads `default_fqbn` / profile, `default_port`, and `ota_password` from `sketch.yaml`, injects `OTA_PASSWORD` at build time, builds to `build\arduino`, and uploads via Arduino CLI OTA.
-
-Command-line (espota.py, alternative)
-- You can also use Espressif’s `espota.py` script directly to upload a compiled binary:
-  - Export/compile a .bin (Arduino IDE: Sketch > Export Compiled Binary or use Arduino CLI build output).
-  - Then run:
-    ```
-    python espota.py -i DEVICE_IP -p 3232 --auth=YOUR_OTA_PASSWORD -f PATH_TO_BINARY.bin
-    ```
-  - `espota.py` is bundled with the Arduino ESP32 core. Adjust the path if needed.
 
 Notes
 - OTA also prints progress to the serial log (115200). You’ll see “OTA: Start”, periodic progress, then “OTA: End”.

@@ -157,6 +157,7 @@ static void sendPkt()
     return;
 
   const size_t N = sizeof(messagequeue) / sizeof(messagequeue[0]);
+  const Msg &msg = messagequeue[q_head];
 
   // do not send message when turning off or slowing down
   if ((lastReceivedCmdByte == 0x4E) ||
