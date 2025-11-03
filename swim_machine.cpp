@@ -66,6 +66,7 @@ static uint8_t lastSentIdx2 = 0xC5; // so first increment is 0x64
 static uint8_t idx2Counter = 0xC5;  // so first increment is 0x64
 static bool readyToSendNext = true;
 static bool resendLastPacket = false;
+static uint8_t lastReceivedCommand = 0x00; // last command byte received from machine (data[3] of 111-byte packet)
 
 static void queuePkt(uint16_t command, uint16_t param = 0)
 {
@@ -77,8 +78,10 @@ static void queuePkt(uint16_t command, uint16_t param = 0)
     nextmessage = messagequeue;
 }
 
-static void confirmPacket(uint8_t idx2)
+static void confirmPacket(uint8_t idx2, uint8_t cmdByte)
 {
+  // Update global last received command byte from machine status packet
+  lastReceivedCommand = cmdByte;
   if (readyToSendNext)
     return;
   static uint8_t lastReceivedIdx2 = 0;
@@ -143,11 +146,11 @@ static void sendPkt()
   if (nextmessagetosend == nextmessage)
     return;
 
-  // do not send message when turning off or slowing down
-  if (/* command byte */ ((uint8_t)(*nextmessagetosend & 0xFF) == 0x4E) ||
-      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x0E) ||
-      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x4A) ||
-      ((uint8_t)(*nextmessagetosend & 0xFF) == 0x0A))
+  // do not send message when machine's last received command indicates turning off or slowing down
+  if (lastReceivedCommand == 0x4E ||
+      lastReceivedCommand == 0x0E ||
+      lastReceivedCommand == 0x4A ||
+      lastReceivedCommand == 0x0A)
     return;
 
   // Only send if ready or if a resend is required
@@ -214,7 +217,7 @@ void SwimMachine::begin()
     // Process only expected 111-byte packets
     if (len == 111)
     {
-      confirmPacket(data[2]);
+      confirmPacket(data[2], data[3]);
 
       if (push_network_event_func)
         push_network_event_func(data, len);

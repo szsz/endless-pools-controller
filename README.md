@@ -121,6 +121,7 @@ Build and upload (USB)
 Helpers:
 - scripts/ota-upload.bat: Windows helper to compile with Arduino CLI and upload via OTA. If you provide a sketch.yaml, the script will read default_fqbn/default_port/ota_password from it; otherwise specify target and options explicitly.
 - scripts/ota-upload.ps1 and scripts/ota_upload.py: alternative helpers for PowerShell/Python.
+- scripts/ota-upload.sh and scripts/serial-upload.sh: Bash helpers for Linux/macOS/WSL that wrap the Python scripts. Make them executable once with: `chmod +x scripts/*.sh`.
 
 ESP32-S3 Dev Module FQBN (example)
 - The exact option keys can vary by ESP32 core version. A typical FQBN with the requested settings looks like:
@@ -149,6 +150,91 @@ scripts\ota-upload.bat swimmachine.local
 scripts\ota-upload.bat 192.168.1.50 esp32s3-eth
 ```
 - If `sketch.yaml` is present, the script reads its settings; otherwise pass target/profile explicitly or build first. It builds to `build\arduino`, then uploads over the network using Arduino CLI’s OTA.
+
+Using the helper script (Bash: Linux/macOS/WSL)
+- Prerequisite: Install Arduino CLI and the ESP32 core (e.g. `arduino-cli core install esp32:esp32`).
+- Optional: Configure your WiFi/Ethernet so the device is reachable by hostname or IP (default OTA service port: 3232).
+- To compile and OTA upload in one step:
+```
+./scripts/ota-upload.sh 192.168.1.50
+```
+- If your device advertises mDNS and your network supports it, you can use:
+```
+./scripts/ota-upload.sh swimmachine.local
+```
+- Optionally select the explicit profile defined in `sketch.yaml`:
+```
+./scripts/ota-upload.sh 192.168.1.50 esp32s3-eth
+```
+
+Running the Python scripts directly (Windows/macOS/Linux)
+- Prerequisites:
+  - Install Python 3.10+.
+  - Install Arduino CLI and the ESP32 core (e.g. `arduino-cli core install esp32:esp32`) if you want the scripts to build/upload.
+- Verify Python:
+  - Windows (Command Prompt): `py -3 --version`
+  - PowerShell: `py -3 --version`
+  - macOS/Linux: `python3 --version`
+
+Windows (Command Prompt)
+- Serial (first flash, flashes custom partitions):
+```
+py -3 scripts\serial_upload.py --port COM5 --build
+```
+- OTA (build if needed, then upload):
+```
+py -3 scripts\ota_upload.py --target 192.168.1.50 --build
+```
+
+Notes for Windows:
+- If `python` opens Microsoft Store or shows “Python was not found”, prefer using the Python Launcher: `py -3 ...`.
+- Alternatively, install Python from https://www.python.org/downloads/ and check “Add python.exe to PATH”.
+- Or disable App execution aliases: Settings > Apps > Advanced app settings > App execution aliases (turn off Python entries).
+
+PowerShell
+- Serial:
+```
+py -3 .\scripts\serial_upload.py --port COM5 --build
+```
+- OTA:
+```
+py -3 .\scripts\ota_upload.py --target swimmachine.local --build
+```
+
+macOS / Linux
+- Serial:
+```
+python3 scripts/serial_upload.py --port /dev/ttyUSB0 --build
+```
+- OTA:
+```
+python3 scripts/ota_upload.py --target swimmachine.local --build
+```
+
+WSL / Git Bash
+- You can use `python3` (if installed in your environment).
+- The serial script accepts `/dev/ttyS{n}` and will map it to `COM{n+1}` automatically on Windows.
+
+Notes
+- The Python scripts only use the standard library.
+- For OTA, ensure the Arduino ESP32 core is installed; the script auto-detects `espota.py` on Windows, Linux (`~/.arduino15`), and macOS (`~/Library/Arduino15`).
+
+Initial flash over serial from Bash (sets custom partitions)
+- Linux (example):
+```
+./scripts/serial-upload.sh --port /dev/ttyUSB0 --build
+```
+- macOS (example):
+```
+./scripts/serial-upload.sh --port /dev/cu.usbserial-0001 --build
+```
+
+Notes
+- If you get a permission error running the .sh files, mark them executable:
+```
+chmod +x scripts/*.sh
+```
+- On Windows Git Bash, you can still use the Bash helpers; the serial script will map /dev/ttyS{n} to COM{n+1} automatically.
 
 ---
 
