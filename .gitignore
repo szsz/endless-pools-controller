@@ -8,3 +8,5 @@ otapassword.h
 boards.local.txt
 sketch.yaml
 /scripts
+.build/*
+buildarduino/*

@@ -319,6 +319,55 @@ How to upload to the device?
   - ESP32 LittleFS Uploader plugin (lorol): https://github.com/lorol/arduino-esp32fs-plugin
     - Use Tools > ESP32 Sketch Data Upload to upload `data/` to LittleFS.
 
+- Command-line (Python: LittleFS via serial or OTA)
+  - Prerequisites: Python 3.10+, Arduino ESP32 core installed for mklittlefs/espota discovery.
+  - Serial/COM (auto-detect partition from serial.log or device):
+    ```
+    python tools/upload_fs.py --port COM5 --chip esp32s3 --baud 921600
+    ```
+  - Serial/COM explicit:
+    ```
+    python tools/upload_fs.py --port COM5 --offset 0x00310000 --size 896K
+    ```
+  - OTA (requires firmware support for FS OTA on ESP32; otherwise use serial):
+    ```
+    python tools/upload_fs.py --ota 192.168.1.50 --auth YOUR_OTA_PASSWORD --size 896K
+    ```
+  - Build only (no upload):
+    ```
+    python tools/upload_fs.py --build-only --size 896K
+    ```
+  - Notes:
+    - The script auto-discovers mklittlefs and espota.py under Arduino15; override with --mklittlefs / --espota if needed.
+    - On ESP32, espota-based FS uploads generally need explicit firmware support; this repo currently uses ArduinoOTA for app updates only, so prefer serial for filesystem updates.
+
+### Installing mklittlefs on Windows (Arduino LittleFS Upload plugin)
+The easiest way to get `mklittlefs.exe` on Windows is to install the Arduino IDE plugin:
+1. Install Arduino IDE 2.2.1 or newer.
+2. Download the VSIX from the plugin releases: https://github.com/earlephilhower/arduino-littlefs-upload/releases
+3. Create the plugins folder if it does not exist:
+   - `C:\Users\<YourUser>\.arduinoIDE\plugins\`
+4. Copy the downloaded `.vsix` file into that folder.
+5. Restart Arduino IDE. You should now see the Command Palette action “Upload LittleFS to Pico/ESP8266/ESP32”.
+
+Finding the `mklittlefs.exe` binary for this script:
+- The plugin bundles `mklittlefs.exe` inside the `.arduinoIDE\plugins` directory. Use Explorer search to locate it:
+  - Open `C:\Users\<YourUser>\.arduinoIDE\plugins\` and search for `mklittlefs.exe`
+- Then pass the full path to the uploader with `--mklittlefs`. For example:
+  ```
+  python tools/upload_fs.py --port COM5 --size 896K --mklittlefs "C:/Users/YourUser/.arduinoIDE/plugins/arduino-littlefs-upload/bin/mklittlefs.exe"
+  ```
+  Notes:
+  - Use forward slashes or quotes in the path on Windows.
+  - The exact subfolder name may include a version; pick the `mklittlefs.exe` you find under `.arduinoIDE/plugins`.
+
+Alternative sources:
+- Installing ESP8266/ESP32 Arduino cores via Boards Manager may also install `mklittlefs` under your Arduino15 folder. The script already searches typical Arduino15 paths and may find it automatically without `--mklittlefs`.
+
+Troubleshooting:
+- If you get “mklittlefs not found”, either install the plugin above or provide the path with `--mklittlefs`.
+- When invoking this script on Windows, prefer forward slashes in script paths (e.g. `python tools/upload_fs.py -h`) to avoid issues with backslashes being interpreted by some shells.
+
 ---
 
 ## Over-the-Air (OTA) Updates
