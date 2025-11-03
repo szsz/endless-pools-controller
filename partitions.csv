@@ -1,0 +1,19 @@
+# Custom 8MB partition layout for ESP32-S3
+# Goal:
+# - 3MB OTA app slot (factory/ota_0)
+# - 3MB OTA app slot (ota_1)
+# - 1.5MB SPIFFS
+# Remaining space is used by NVS/OTADATA/headers.
+#
+# Columns: Name, Type, SubType, Offset, Size, Flags
+
+# NVS and OTA data
+nvs,      data, nvs,     0x9000,   0x5000
+otadata,  data, ota,     0xe000,   0x2000
+
+# App slots (3MB each)
+app0,     app,  ota_0,   0x10000,  0x300000
+app1,     app,  ota_1,   ,         0x300000
+
+# SPIFFS (1.5MB)
+spiffs,   data, spiffs,  ,         0x180000
