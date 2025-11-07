@@ -107,6 +107,32 @@ def derive_psk_from_header(header_path: str = "otapassword.h") -> str | None:
     except Exception:
         return None
 
+def derive_full_password_from_header(header_path: str = "otapassword.h") -> str | None:
+    """
+    Parse otapassword.h and return the full OTA_PASSWORD value, or None if not found.
+    """
+    try:
+        with open(header_path, "r", encoding="utf-8") as f:
+            txt = f.read()
+        key = 'OTA_PASSWORD'
+        if key not in txt:
+            return None
+        idx = txt.find(key)
+        q1 = txt.find('"', idx)
+        if q1 == -1:
+            q1 = txt.find("'", idx)
+        if q1 == -1:
+            return None
+        q2 = txt.find('"', q1 + 1) if txt[q1] == '"' else txt.find("'", q1 + 1)
+        if q2 == -1:
+            return None
+        value = txt[q1 + 1:q2]
+        if not value:
+            return None
+        return value
+    except Exception:
+        return None
+
 def make_psk_candidates(cli_psk: str | None) -> List[Tuple[str, str]]:
     """
     Build a prioritized list of (source_label, psk_value) candidates.
@@ -126,11 +152,14 @@ def make_psk_candidates(cli_psk: str | None) -> List[Tuple[str, str]]:
     yaml_pw = read_yaml_ota_password(REPO_ROOT / "sketch.yaml")
     env_psk = os.environ.get("UPLOAD_PSK")
     header_psk = derive_psk_from_header()
+    header_full = derive_full_password_from_header()
 
     add("cli -k", cli_psk)
     add("env UPLOAD_PSK", env_psk)
     add("sketch.yaml ota_password (first10)", (yaml_pw[:10] if yaml_pw else None))
+    add("sketch.yaml ota_password (full)", yaml_pw)
     add("otapassword.h first10", header_psk)
+    add("otapassword.h full", header_full)
 
     return cands
 
@@ -141,12 +170,13 @@ def upload_file_with_psk_candidates(base: str, psk_cands: List[Tuple[str, str]],
     Returns (json_response, (label, psk)) for the successful candidate.
     Raises RuntimeError if all candidates fail.
     """
-    url = f"{base.rstrip('/')}/api/upload?path={quote(rel_path.replace(os.sep, '/'))}"
+    base_url = f"{base.rstrip('/')}/api/upload?path={quote(rel_path.replace(os.sep, '/'))}"
     with open(local_path, 'rb') as f:
         data = f.read()
 
     last_err = None
     for label, psk in psk_cands:
+        url = f"{base_url}&psk={quote(psk)}"
         req = Request(url, data=data, method='POST')
         req.add_header('X-PSK', psk or '')
         req.add_header('Content-Type', 'application/octet-stream')

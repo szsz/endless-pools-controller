@@ -53,12 +53,23 @@ static void settings_load() {
 }
 
 static void settings_store() {
-  StaticJsonDocument<128> d;
+  // Preserve other keys in settings.json, only update brightness
+  StaticJsonDocument<512> d;
+  if (LittleFS.exists("/settings.json")) {
+    File rf = LittleFS.open("/settings.json", "r");
+    if (rf) {
+      DeserializationError err = deserializeJson(d, rf);
+      rf.close();
+      if (err) {
+        d.clear();
+      }
+    }
+  }
   d["brightness"] = s_brightness_percent;
-  File f = LittleFS.open("/settings.json", "w");
-  if (!f) return;
-  serializeJson(d, f);
-  f.close();
+  File wf = LittleFS.open("/settings.json", "w");
+  if (!wf) return;
+  serializeJson(d, wf);
+  wf.close();
 }
 
 uint8_t HUB75_getBrightnessPercent() {

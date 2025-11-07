@@ -21,13 +21,24 @@ static const uint32_t maxJsonSize = 1024 * 8;
 
 static const size_t kPSKLen = 10; // PSK = first 10 chars of OTA_PASSWORD
 
-// Check PSK from header X-PSK, or query/body param "psk"
+ // Check PSK from header X-PSK (case-insensitive), or query/body param "psk"
 static bool check_psk(AsyncWebServerRequest* r) {
-  String psk;
-  if (r->hasHeader("X-PSK")) {
-    auto* h = r->getHeader("X-PSK");
-    if (h) psk = h->value();
-  }
+  auto getHeaderCaseInsensitive = [&](const char* name) -> String {
+    if (r->hasHeader(name)) {
+      auto* h = r->getHeader(name);
+      if (h) return h->value();
+    }
+    // Fallback: iterate headers and compare case-insensitively
+    for (size_t i = 0; i < r->headers(); ++i) {
+      auto* h = r->getHeader(i);
+      if (h && h->name().equalsIgnoreCase(name)) {
+        return h->value();
+      }
+    }
+    return String();
+  };
+
+  String psk = getHeaderCaseInsensitive("X-PSK");
   if (psk.length() == 0) {
     if (r->hasParam("psk")) {
       psk = r->getParam("psk")->value();
@@ -35,8 +46,10 @@ static bool check_psk(AsyncWebServerRequest* r) {
       psk = r->getParam("psk", true)->value();
     }
   }
-  String expected = String(OTA_PASSWORD).substring(0, kPSKLen);
-  if (psk != expected) {
+
+  String expected10 = String(OTA_PASSWORD).substring(0, kPSKLen);
+  String expectedFull = String(OTA_PASSWORD);
+  if (psk != expected10 && psk != expectedFull) {
     r->send(401, "text/plain", "unauthorized");
     return false;
   }
