@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Settings</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    body { padding: 0.75rem; }
+    .row { display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0; }
+    .card { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin: 0.5rem 0; background: #fafafa; }
+    .muted { color: #666; font-size: 0.9rem; }
+    .ok { color: #0a0; }
+    .err { color: #a00; }
+    label.inline { display: inline-flex; align-items: center; gap: 0.5rem; }
+    input[type="text"], input[type="password"] { width: 18rem; max-width: 100%; }
+    #msg { min-height: 1.2rem; }
+  </style>
+</head>
+<body>
+  <header class="row">
+    <h2 style="margin: 0;">Settings</h2>
+    <a href="/index.html" style="margin-left:auto;">Back to Editor</a>
+  </header>
+
+  <section class="card">
+    <h3 style="margin-top:0;">Display Brightness</h3>
+    <div class="row">
+      <label class="inline" for="brightness">
+        <span>Brightness</span>
+        <input id="brightness" type="range" min="0" max="100" step="1" value="50" />
+        <strong><span id="brightnessVal">50</span>%</strong>
+      </label>
+    </div>
+    <p class="muted">Changes are applied immediately and persisted in LittleFS (/settings.json).</p>
+  </section>
+
+  <section class="card">
+    <h3 style="margin-top:0;">Upload Files to LittleFS</h3>
+    <div class="row">
+      <label class="inline">PSK
+        <input id="psk" type="password" placeholder="first 10 chars of OTA_PASSWORD" />
+      </label>
+    </div>
+    <div class="row">
+      <label class="inline">Target path
+        <input id="targetPath" type="text" placeholder="e.g. workouts/new.json or static/logo.png" />
+      </label>
+    </div>
+    <div class="row">
+      <input id="fileInput" type="file" />
+      <button id="uploadBtn">Upload</button>
+    </div>
+    <p class="muted">Files are written under the LittleFS root. Subfolders will be created as needed.</p>
+    <div id="msg" aria-live="polite"></div>
+  </section>
+
+  <script>
+    const $ = (sel) => document.querySelector(sel);
+    const brightnessEl = $('#brightness');
+    const brightnessValEl = $('#brightnessVal');
+    const msgEl = $('#msg');
+
+    function setMsg(text, ok) {
+      msgEl.textContent = text || '';
+      msgEl.className = ok ? 'ok' : (text ? 'err' : '');
+    }
+
+    async function loadSettings() {
+      try {
+        const res = await fetch('/api/settings');
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        const b = (typeof j.brightness === 'number') ? j.brightness : 50;
+        brightnessEl.value = b;
+        brightnessValEl.textContent = b;
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function saveBrightness(b) {
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ brightness: b })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        brightnessEl.value = j.brightness;
+        brightnessValEl.textContent = j.brightness;
+      } catch (e) {
+        console.error(e);
+        setMsg('Failed to save brightness: ' + e.message, false);
+        return;
+      }
+      setMsg('Brightness saved', true);
+      setTimeout(() => setMsg('', true), 1200);
+    }
+
+    brightnessEl.addEventListener('input', (e) => {
+      brightnessValEl.textContent = e.target.value;
+    });
+    brightnessEl.addEventListener('change', (e) => {
+      const v = parseInt(e.target.value, 10);
+      if (Number.isFinite(v) && v >= 0 && v <= 100) saveBrightness(v);
+    });
+
+    async function uploadOnce(psk, relPath, file) {
+      setMsg('', true);
+      if (!file) { setMsg('Pick a file', false); return; }
+      if (!relPath || !relPath.trim()) { setMsg('Enter target path', false); return; }
+      try {
+        const buf = await file.arrayBuffer();
+        const url = '/api/upload?path=' + encodeURIComponent(relPath.trim());
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'X-PSK': psk || '',
+            'Content-Type': 'application/octet-stream'
+          },
+          body: buf
+        });
+        if (!res.ok) {
+          const t = await res.text().catch(()=>'');
+          throw new Error('HTTP ' + res.status + (t?(' - ' + t):''));
+        }
+        const j = await res.json().catch(()=>({}));
+        setMsg('Uploaded ' + (j.path || relPath) + ' (' + (j.size || buf.byteLength) + ' bytes)', true);
+      } catch (e) {
+        console.error(e);
+        setMsg('Upload failed: ' + e.message, false);
+      }
+    }
+
+    $('#uploadBtn').addEventListener('click', () => {
+      const psk = $('#psk').value;
+      const path = $('#targetPath').value;
+      const file = $('#fileInput').files[0];
+      uploadOnce(psk, path, file);
+    });
+
+    loadSettings();
+  </script>
+</body>
+</html>

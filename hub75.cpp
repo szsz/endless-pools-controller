@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <ArduinoJson.h>
+#include <LittleFS.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <Fonts/TomThumb.h>
 #include "hub75.h"
@@ -30,6 +31,49 @@ static const int PIN_OE  = 48;
 /*************** State ***************/
 static MatrixPanel_I2S_DMA *dma_display = nullptr;
 
+static uint8_t s_brightness_percent = 50;
+
+static uint8_t percent_to_brightness8(uint8_t p) {
+  if (p > 100) p = 100;
+  return (uint8_t)((p * 255 + 50) / 100);
+}
+
+static void settings_load() {
+  if (!LittleFS.exists("/settings.json")) return;
+  File f = LittleFS.open("/settings.json", "r");
+  if (!f) return;
+  StaticJsonDocument<256> d;
+  if (deserializeJson(d, f) == DeserializationError::Ok) {
+    int b = d["brightness"] | -1;
+    if (b >= 0 && b <= 100) {
+      s_brightness_percent = (uint8_t)b;
+    }
+  }
+  f.close();
+}
+
+static void settings_store() {
+  StaticJsonDocument<128> d;
+  d["brightness"] = s_brightness_percent;
+  File f = LittleFS.open("/settings.json", "w");
+  if (!f) return;
+  serializeJson(d, f);
+  f.close();
+}
+
+uint8_t HUB75_getBrightnessPercent() {
+  return s_brightness_percent;
+}
+
+void HUB75_setBrightnessPercent(uint8_t percent) {
+  if (percent > 100) percent = 100;
+  s_brightness_percent = percent;
+  if (dma_display) {
+    dma_display->setBrightness8(percent_to_brightness8(s_brightness_percent));
+  }
+  settings_store();
+}
+
 
 void setupHUB75() {
   HUB75_I2S_CFG mxconfig(PANEL_WIDTH, PANEL_HEIGHT, PANEL_CHAIN);
@@ -41,7 +85,8 @@ void setupHUB75() {
 
   dma_display = new MatrixPanel_I2S_DMA(mxconfig);
   dma_display->begin();
-  dma_display->setBrightness8(50); // 0..255
+  settings_load();
+  dma_display->setBrightness8(percent_to_brightness8(s_brightness_percent)); // 0..255
   dma_display->clearScreen();
 }
 

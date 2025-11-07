@@ -5,6 +5,8 @@
 #include <ArduinoJson.h>
 #include "workout_manager.h"
 #include "workout_storage.h"
+#include "hub75.h"
+#include "otapassword.h"
 
 
 /* Internal singletons */
@@ -16,6 +18,61 @@ namespace AppNetwork
 {
 
 static const uint32_t maxJsonSize = 1024 * 8;
+
+static const size_t kPSKLen = 10; // PSK = first 10 chars of OTA_PASSWORD
+
+// Check PSK from header X-PSK, or query/body param "psk"
+static bool check_psk(AsyncWebServerRequest* r) {
+  String psk;
+  if (r->hasHeader("X-PSK")) {
+    auto* h = r->getHeader("X-PSK");
+    if (h) psk = h->value();
+  }
+  if (psk.length() == 0) {
+    if (r->hasParam("psk")) {
+      psk = r->getParam("psk")->value();
+    } else if (r->hasParam("psk", true)) {
+      psk = r->getParam("psk", true)->value();
+    }
+  }
+  String expected = String(OTA_PASSWORD).substring(0, kPSKLen);
+  if (psk != expected) {
+    r->send(401, "text/plain", "unauthorized");
+    return false;
+  }
+  return true;
+}
+
+// Create intermediate directories for a given absolute path (/dir/sub/file)
+static bool ensure_dirs(const String& absPath) {
+  int lastSlash = absPath.lastIndexOf('/');
+  if (lastSlash <= 0) return true;
+  String dir = absPath.substring(0, lastSlash);
+  if (dir.length() == 0) return true;
+  String partial;
+  int start = 0;
+  while (start < (int)dir.length()) {
+    int idx = dir.indexOf('/', start);
+    String chunk = (idx < 0) ? dir.substring(start) : dir.substring(start, idx);
+    if (chunk.length() > 0) {
+      partial += "/";
+      partial += chunk;
+      LittleFS.mkdir(partial);
+    }
+    if (idx < 0) break;
+    start = idx + 1;
+  }
+  return true;
+}
+
+// Normalize a user-provided path into absolute path under LittleFS root
+static String sanitize_path(String in) {
+  in.replace("\\", "/");
+  while (in.startsWith("/")) in = in.substring(1);
+  in.replace("..", "");
+  String out = "/" + in;
+  return out;
+}
 
 // helper: send JSON
 static void send_json(AsyncWebServerRequest *r, const String &js)
@@ -115,7 +172,81 @@ void begin()
                   req->send(404, "text/plain", "Upload status.html");
                 } });
 
+  g_server.on("/settings.html", HTTP_GET, [](AsyncWebServerRequest *req)
+              {
+                if (LittleFS.exists("/settings.html"))
+                {
+                  req->send(LittleFS, "/settings.html", "text/html");
+                }
+                else
+                {
+                  req->send(404, "text/plain", "Upload settings.html");
+                } });
 
+
+
+  // Settings API: brightness get/set
+  g_server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *r)
+              {
+                StaticJsonDocument<64> d;
+                d["brightness"] = HUB75_getBrightnessPercent();
+                String out; serializeJson(d, out);
+                send_json(r, out); });
+
+  g_server.on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *r)
+              { r->send(200); },
+              nullptr,
+              [](AsyncWebServerRequest *r, uint8_t *data, size_t len, size_t index, size_t total)
+              {
+                static uint8_t g_buffer[maxJsonSize];
+                if (total > maxJsonSize) { r->send(413, "text/plain", "Too large"); return; }
+                memcpy(&g_buffer[index], data, len);
+                if (index + len < total) return;
+                StaticJsonDocument<128> d;
+                DeserializationError err = deserializeJson(d, g_buffer, total);
+                if (err) { r->send(400, "text/plain", "Bad JSON"); return; }
+                int b = d["brightness"] | -1;
+                if (b < 0 || b > 100) { r->send(400, "text/plain", "brightness 0..100"); return; }
+                HUB75_setBrightnessPercent((uint8_t)b);
+                StaticJsonDocument<64> resp;
+                resp["brightness"] = HUB75_getBrightnessPercent();
+                String out; serializeJson(resp, out);
+                send_json(r, out);
+              });
+
+  // Raw body upload API: POST /api/upload?path=relative/sub/file [&psk=...]
+  // Body is the file bytes; supports subfolders.
+  g_server.on("/api/upload", HTTP_POST, [](AsyncWebServerRequest *r)
+              { /* response sent in body handler */ },
+              nullptr,
+              [](AsyncWebServerRequest *r, uint8_t *data, size_t len, size_t index, size_t total)
+              {
+                if (!check_psk(r)) return;
+                if (!r->hasParam("path")) { r->send(400, "text/plain", "missing path"); return; }
+                String rel = r->getParam("path")->value();
+                String abs = sanitize_path(rel);
+                if (index == 0) {
+                  ensure_dirs(abs);
+                  File f = LittleFS.open(abs, "w");
+                  if (!f) { r->send(500, "text/plain", "open failed"); return; }
+                  size_t w = f.write(data, len);
+                  f.close();
+                  if (w != len) { r->send(500, "text/plain", "write failed"); return; }
+                } else {
+                  File f = LittleFS.open(abs, "a");
+                  if (!f) { r->send(500, "text/plain", "append open failed"); return; }
+                  size_t w = f.write(data, len);
+                  f.close();
+                  if (w != len) { r->send(500, "text/plain", "append failed"); return; }
+                }
+                if (index + len >= total) {
+                  StaticJsonDocument<128> d;
+                  d["path"] = rel;
+                  d["size"] = (uint32_t)total;
+                  String out; serializeJson(d, out);
+                  send_json(r, out);
+                }
+              });
 
   g_server.on("/", HTTP_GET, serve_index);
   g_server.serveStatic("/static", LittleFS, "/static/");

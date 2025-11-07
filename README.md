@@ -320,7 +320,59 @@ How to upload to the device?
     - Use Tools > ESP32 Sketch Data Upload to upload `data/` to LittleFS.
 
 Notes
-- Command-line LittleFS upload scripts have been removed from this repository. Use the Arduino IDE tools above to manage the filesystem.
+- You can also upload via the device’s HTTP API using the provided Python helper (see below).
+- Authentication: uploads require a PSK equal to the first 10 characters of OTA_PASSWORD (defined in local otapassword.h). The Python helper auto-derives this PSK by reading otapassword.h unless you override it.
+
+### Uploading via HTTP (Python tool)
+
+A lightweight uploader is provided at `tools/upload_http_data.py`. It walks a local directory (default: `data/`) and uploads each file, preserving relative paths, to the device’s LittleFS via the `/api/upload` endpoint.
+
+Prerequisites
+- Python 3.10+ installed
+- Device reachable by hostname (mDNS) or IP (e.g., http://swimmachine.local or http://192.168.1.50)
+- The device must be running this firmware (which exposes `/api/upload`)
+
+Basic usage (auto-derives PSK from `otapassword.h`)
+```
+python tools/upload_http_data.py --base http://swimmachine.local --dir data
+```
+
+Using an IP instead of mDNS:
+```
+python tools/upload_http_data.py --base http://192.168.1.50 --dir data
+```
+
+Override PSK (optional)
+```
+python tools/upload_http_data.py --base http://swimmachine.local --dir data -k YOUR_PSK
+```
+
+Dry-run (list what would be uploaded, but don’t send)
+```
+python tools/upload_http_data.py --base http://swimmachine.local --dir data --dry-run
+```
+
+What it does
+- For each file under `--dir`, computes a relative path and uploads to `/api/upload?path=RELATIVE/PATH`
+  - Example: `data/static/app.js` → remote path `static/app.js`
+  - Example: `data/index.html` → remote path `index.html`
+- Sends raw file bytes with headers:
+  - `X-PSK: <pre-shared-key>` (first 10 chars of OTA_PASSWORD)
+  - `Content-Type: application/octet-stream`
+- Creates subfolders automatically on the device as needed
+
+Single-file upload via curl (alternative)
+```
+curl -X POST --data-binary @data/index.html \
+  -H "X-PSK: $(python -c "import re;print(re.search(r'OTA_PASSWORD\\s+\\\"(.*?)\\\"',open('otapassword.h').read()).group(1)[:10])")" \
+  -H "Content-Type: application/octet-stream" \
+  "http://swimmachine.local/api/upload?path=index.html"
+```
+
+Troubleshooting
+- 401 Unauthorized: PSK mismatch. Ensure the PSK equals the first 10 characters of `OTA_PASSWORD` in `otapassword.h`, or pass `-k` explicitly.
+- Connection errors: verify the device is on your network and the URL/hostname is reachable.
+- After uploading, hard-refresh your browser to avoid cached old assets (Ctrl+F5/Shift+Reload).
 
 ---
 

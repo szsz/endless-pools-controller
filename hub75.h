@@ -17,5 +17,8 @@ void setupHUB75();
 
 
 
+uint8_t HUB75_getBrightnessPercent();
+void HUB75_setBrightnessPercent(uint8_t percent);
+
 void printJSon(DynamicJsonDocument doc);
 void drawSwimmerAnimationTick();
