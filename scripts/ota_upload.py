@@ -170,17 +170,21 @@ def derive_fqbn(cli_fqbn: Optional[str], yaml_fqbn: Optional[str]) -> str:
     return "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,PSRAM=opi,FlashSize=8M,PartitionScheme=custom"
 
 
-def compile_sketch(fqbn: str, build_dir: Path, repo_root: Path, ota_pw: Optional[str], verbose: bool) -> int:
+def compile_sketch(fqbn: str, build_dir: Path, repo_root: Path, ota_pw: Optional[str], debug: bool, verbose: bool) -> int:
     arduino = find_arduino_cli()
     if not arduino:
         print("ERROR: arduino-cli not found in PATH. Install Arduino CLI or compile with IDE first.", file=sys.stderr)
         return 10
     cmd = [arduino, "compile", "-b", fqbn, "--build-path", str(build_dir), "--export-binaries", str(repo_root)]
+    flags: list[str] = []
     if ota_pw:
-        # Inject OTA_PASSWORD so the firmware uses the same password for future OTA
-        define = f'-DOTA_PASSWORD="{ota_pw}"'
-        cmd += ["--build-property", f"compiler.cpp.extra_flags={define}",
-                "--build-property", f"compiler.c.extra_flags={define}"]
+        flags.append(f'-DOTA_PASSWORD="{ota_pw}"')
+    if debug:
+        flags.append("-DDEBUG")
+    if flags:
+        flags_str = " ".join(flags)
+        cmd += ["--build-property", f"compiler.cpp.extra_flags={flags_str}",
+                "--build-property", f"compiler.c.extra_flags={flags_str}"]
     if verbose:
         print("[INFO] compile cmd:", " ".join(cmd))
     try:
@@ -200,6 +204,7 @@ def main() -> int:
     parser.add_argument("--fqbn", help="Fully Qualified Board Name (for compile). Overrides sketch.yaml default_fqbn if provided.")
     parser.add_argument("--build", action="store_true", help="Compile the sketch before uploading. If not set, will auto-compile only if binary not found.")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
+    parser.add_argument("--debug", action="store_true", help="Define DEBUG to enable verbose PSK debug in server 401 responses (security risk).")
     args = parser.parse_args()
 
     default_port, yaml_ota_pw, yaml_fqbn = read_sketch_defaults(SKETCH_YAML)
@@ -226,7 +231,7 @@ def main() -> int:
             print("[INFO] using FQBN:", fqbn)
             if ota_pw:
                 print("[INFO] injecting OTA_PASSWORD for build")
-        rc = compile_sketch(fqbn, BUILD_DIR, REPO_ROOT, ota_pw, args.verbose)
+        rc = compile_sketch(fqbn, BUILD_DIR, REPO_ROOT, ota_pw, args.debug, args.verbose)
         if rc != 0:
             print("[ERROR] Build failed.", file=sys.stderr)
             return rc

@@ -37,13 +37,40 @@ import sys
 import time
 from pathlib import Path
 from typing import List, Tuple
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError, URLError
+import socket
 
 SKIP_NAMES = {'.DS_Store', 'Thumbs.db'}
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+def preflight_base(base: str) -> bool:
+    """
+    Preflight DNS resolution for the base URL's hostname to provide clear diagnostics.
+    Returns True if resolution succeeds, False otherwise (after printing guidance).
+    """
+    try:
+        parsed = urlparse(base)
+        host = parsed.hostname
+        port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        if not host:
+            print(f"[ERROR] Invalid base URL (no host): {base}", file=sys.stderr)
+            return False
+        # try resolve
+        socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+        return True
+    except socket.gaierror as e:
+        print(f"[ERROR] Could not resolve host '{host}' from base URL '{base}': {e}", file=sys.stderr)
+        print("Hints:", file=sys.stderr)
+        print(" - Ensure the device is reachable and mDNS is available for '.local' names.", file=sys.stderr)
+        print(" - Try using the device IP instead, e.g.:  --base http://192.168.1.50", file=sys.stderr)
+        print(" - Or set an alternate hostname in --base, matching your network DNS.", file=sys.stderr)
+        return False
+    except Exception as e:
+        print(f"[ERROR] Unexpected error validating base URL '{base}': {e}", file=sys.stderr)
+        return False
 
 def clean_yaml_value(s: str | None) -> str | None:
     if s is None:
@@ -79,57 +106,34 @@ def read_yaml_ota_password(sketch_yaml_path: Path) -> str | None:
     except Exception:
         return None
 
-def derive_psk_from_header(header_path: str = "otapassword.h") -> str | None:
+def derive_psk_from_header(header_path: str | Path | None = None) -> str | None:
     """
     Parse otapassword.h and return the first 10 characters of OTA_PASSWORD, or None if not found.
+    Uses REPO_ROOT/otapassword.h by default.
     """
-    try:
-        with open(header_path, "r", encoding="utf-8") as f:
-            txt = f.read()
-        # Look for a line like: #define OTA_PASSWORD "...."
-        key = 'OTA_PASSWORD'
-        if key not in txt:
-            return None
-        # naive parse: find first quote after OTA_PASSWORD
-        idx = txt.find(key)
-        q1 = txt.find('"', idx)
-        if q1 == -1:
-            q1 = txt.find("'", idx)
-        if q1 == -1:
-            return None
-        q2 = txt.find('"', q1 + 1) if txt[q1] == '"' else txt.find("'", q1 + 1)
-        if q2 == -1:
-            return None
-        value = txt[q1 + 1:q2]
-        if not value:
-            return None
-        return value[:10]
-    except Exception:
+    if header_path is None:
+        header_path = REPO_ROOT / "otapassword.h"
+    full = derive_full_password_from_header(header_path)
+    if not full:
         return None
+    return full[:10]
 
-def derive_full_password_from_header(header_path: str = "otapassword.h") -> str | None:
+def derive_full_password_from_header(header_path: str | Path | None = None) -> str | None:
     """
     Parse otapassword.h and return the full OTA_PASSWORD value, or None if not found.
+    Accepts either double- or single-quoted defines. Uses REPO_ROOT/otapassword.h by default.
     """
+    if header_path is None:
+        header_path = REPO_ROOT / "otapassword.h"
     try:
-        with open(header_path, "r", encoding="utf-8") as f:
-            txt = f.read()
-        key = 'OTA_PASSWORD'
-        if key not in txt:
+        p = Path(header_path)
+        txt = p.read_text(encoding="utf-8", errors="ignore")
+        import re
+        # Match e.g.   #define OTA_PASSWORD "value"    or   #define OTA_PASSWORD 'value'
+        m = re.search(r'(?m)^\s*#\s*define\s+OTA_PASSWORD\s+(?:"([^"]+)"|\'([^\']+)\')\s*$', txt)
+        if not m:
             return None
-        idx = txt.find(key)
-        q1 = txt.find('"', idx)
-        if q1 == -1:
-            q1 = txt.find("'", idx)
-        if q1 == -1:
-            return None
-        q2 = txt.find('"', q1 + 1) if txt[q1] == '"' else txt.find("'", q1 + 1)
-        if q2 == -1:
-            return None
-        value = txt[q1 + 1:q2]
-        if not value:
-            return None
-        return value
+        return m.group(1) or m.group(2)
     except Exception:
         return None
 
@@ -234,6 +238,10 @@ def main():
     ap.add_argument('--dry-run', action='store_true', help='List files but do not upload')
     args = ap.parse_args()
 
+    # Preflight DNS resolution for clearer error messages (esp. .local on Windows)
+    if not preflight_base(args.base):
+        sys.exit(4)
+
     if not os.path.isdir(args.dir):
         print(f"[ERROR] Directory not found: {args.dir}", file=sys.stderr)
         sys.exit(2)
@@ -271,10 +279,28 @@ def main():
             ok += 1
             if not chosen_label_psk:
                 chosen_label_psk = chosen
-                print(f"  Using PSK source: {chosen_label_psk[0]}")
+                print(f"  Using PSK source: {chosen_label_psk[0]} value: {chosen_label_psk[1]}")
             print(f"  OK  ({resp.get('size', '?')} bytes) -> {resp.get('path', remote_rel)}")
         except Exception as e:
-            print(f"  FAIL: {e}", file=sys.stderr)
+            msg = str(e)
+            print(f"  FAIL: {msg}", file=sys.stderr)
+            # If no candidates worked, optionally prompt for a PSK and retry once
+            if (not args.dry_run) and ("no valid PSK candidates" in msg or "401" in msg) and chosen_label_psk is None:
+                try:
+                    user_psk = input("Enter PSK to retry (leave empty to skip): ").strip()
+                except Exception:
+                    user_psk = ""
+                if user_psk:
+                    # Try the user-provided PSK immediately for this file
+                    try:
+                        resp, chosen = upload_file_with_psk_candidates(args.base, [("interactive", user_psk)], remote_rel, abs_path)
+                        ok += 1
+                        chosen_label_psk = chosen
+                        print(f"  Using PSK source: interactive value: {user_psk}")
+                        print(f"  OK  ({resp.get('size', '?')} bytes) -> {resp.get('path', remote_rel)}")
+                        continue
+                    except Exception as e2:
+                        print(f"  FAIL (interactive): {e2}", file=sys.stderr)
 
     dur = time.time() - start
     print(f"\nDone. {ok}/{total} files uploaded in {dur:.1f}s (base={args.base})")

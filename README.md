@@ -288,8 +288,12 @@ Option B – PowerShell helper
 
 Option C – Python helper (builds if needed, then OTA uploads)
 - python scripts\ota_upload.py --target 192.168.1.50 --build
-- python scripts\ota_upload.py --target swimmachine.local --build
+- python scripts\\ota_upload.py --target swimmachine.local --build
 - If a binary already exists (build\arduino\*.ino.bin), you can omit --build.
+
+OTA upload and data refesh
+python scripts\\ota_upload.py --target swimmachine.local --build
+python scripts\\upload_http_data.py
 
 Passwords and defaults
 - OTA service port: 3232 (default).
