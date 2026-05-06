@@ -12,8 +12,10 @@ Tested hardware: Waveshare ESP32-S3-ETH (W5500 over SPI). See board details and 
 ## Table of Contents
 
 - [Introduction](#introduction)
+- [Quick Install (one command)](#quick-install-one-command)
 - [Swim Machine Protocol](#swim-machine-protocol)
 - [Deploying to ESP32-S3 (Arduino IDE/CLI)](#deploying-to-esp32-s3-arduino-idecli)
+  - [HUB75 LED Panel Wiring](#hub75-led-panel-wiring)
   - [Arduino IDE (ESP32-S3-ETH settings)](#arduino-ide-esp32-s3-eth-settings)
   - [Arduino CLI (FQBN and OTA)](#arduino-cli-fqbn-and-ota)
 - [Uploading Data Files (Web UI, Workouts, etc.)](#uploading-data-files-web-ui-workouts-etc)
@@ -38,6 +40,68 @@ This project is a smart controller for a swim machine, built on the ESP32-S3 mic
 - WiFi and Ethernet connectivity for easy access from any device.
 - Persistent storage of workouts and preferences.
 - Real-time monitoring and control of the swim machine.
+
+---
+
+## Quick Install (one command)
+
+For a fresh device, the easiest path is the all-in-one installer in `scripts/install.py`. It:
+
+1. Asks what to run: **F**irmware only, **D**ata only, or **B**oth (default).
+2. (Firmware) Auto-detects the ESP32-S3's USB serial port (Espressif USB VID `303A`) and asks you to confirm.
+3. (Firmware) Compiles the firmware with Arduino CLI and flashes it over USB serial (this also writes the custom partition table — required before OTA can be used).
+4. (Data) Probes `http://swimmachine.local` silently. If the device responds, the upload starts straight away. If not, prints a built-in WiFi setup tutorial and re-prompts for a base URL until the device is reachable (or you abort).
+5. (Data) Uploads `data/` (Web UI + workouts) into LittleFS over HTTP.
+
+Prerequisites
+- Python 3.10+ (`py -3 --version` on Windows, `python3 --version` elsewhere).
+- Arduino CLI on `PATH`, with the ESP32 core installed: `arduino-cli core install esp32:esp32`.
+- ESP32-S3 connected via USB Type‑C.
+- Stdlib only — no `pip install` needed.
+
+Run it
+- Windows (Command Prompt / PowerShell):
+  ```
+  py -3 scripts\install.py
+  ```
+- Windows (Git Bash / WSL) — use forward slashes, since Bash treats `\` as an escape:
+  ```
+  py -3 scripts/install.py
+  ```
+- macOS / Linux:
+  ```
+  python3 scripts/install.py
+  ```
+
+What you'll see
+1. **Action prompt** — `[F]irmware only / [D]ata only / [B]oth`. Press Enter to accept the default (Both).
+2. **(Firmware step)** The script lists detected serial ports and picks the Espressif one (e.g. `COM3` on Windows). If multiple are found you'll be asked to choose; if none look like Espressif you can pick any visible serial device. After confirming, it runs `scripts/serial_upload.py --port <COMx> --build` to compile + flash.
+3. **(Data step)** The device reboots and is given a moment to come up. The script silently probes `http://swimmachine.local/wifi` (a route always served by the firmware, no LittleFS dependency). If it responds, the upload starts immediately.
+4. **If the device is unreachable**, the script prints an inline **WiFi setup tutorial** and asks for a different URL:
+   - Press Enter to retry `http://swimmachine.local` after fixing the connection.
+   - Type `4` for `http://192.168.4.1` (the device's AP-mode address on first boot — connect your PC to the `swimmachine` WiFi network with password `12345678` first).
+   - Or paste any URL/IP, e.g. `http://192.168.1.50`.
+
+   The loop continues until the probe succeeds or you choose to abort.
+5. Once the device is reachable, the script runs `scripts/upload_http_data.py` to push every file under `data/` into LittleFS via the device's `/api/upload` endpoint.
+
+WiFi tutorial (what the script prints when it can't reach the device)
+
+The same instructions are embedded in the script. Summary:
+
+- **First install / device offline:** connect your phone or PC to the WiFi network named `swimmachine` (password `12345678`), open `http://192.168.4.1/wifi`, enter your home WiFi SSID + password, save. The device reboots onto your WiFi.
+- **Device already on the LAN:** use `http://swimmachine.local` or the LAN IP shown on your router/serial log.
+- **Change WiFi later:** from your LAN open `http://swimmachine.local/wifi` and re-submit the form.
+
+Useful flags
+- `--action firmware|data|both` — skip the action prompt.
+- `--port COM3` — skip auto-detect.
+- `--base http://192.168.4.1` — skip the auto-probe / prompt; use this URL (still probed; on failure the script falls back to the prompt loop).
+- `--skip-firmware` — alias for `--action data`.
+- `--skip-data` — alias for `--action firmware`.
+- `-y` / `--yes` — don't ask to confirm the auto-detected port or final upload.
+
+After the first install, subsequent firmware updates are typically done over the network (see [Over-the-Air (OTA) Updates](#over-the-air-ota-updates)) and data files via `scripts/upload_http_data.py` directly.
 
 ---
 
@@ -73,6 +137,7 @@ Hardware (tested)
     - CS=GPIO14, RST=GPIO9, INT=GPIO10, SCK=GPIO13, MISO=GPIO12, MOSI=GPIO11
   - Camera and other interfaces are available but not required for this project
 - Swim machine hardware (relay/motor control, sensors as needed).
+- Optional: HUB75 RGB LED matrix panel (64×64, 1/32 scan, single chained panel). Used to display workout status and a swimmer animation. The controller runs fine without it. See [HUB75 LED Panel Wiring](#hub75-led-panel-wiring) below.
 - USB Type‑C cable.
 
 Software (common)
@@ -80,12 +145,66 @@ Software (common)
 - Web server: ESPAsyncWebServer + AsyncTCP (ESP32).
 - JSON: ArduinoJson.
 - mDNS: ESPmDNS (included with ESP32 Arduino core).
+- HUB75 driver (optional, only if a panel is connected): ESP32-HUB75-MatrixPanel-I2S-DMA (mrfaptastic/Adafruit GFX-compatible).
 
 Note on Ethernet: This firmware uses the Arduino Ethernet support for SPI W5500 (ETH.h). No RMII/PHY configuration is needed for ESP32-S3-ETH since Ethernet is via W5500 on SPI. The default W5500 pin definitions in `ConnectionManager.h`/`NetworkSetup.h` match the Waveshare board:
 - ETH_TYPE=ETH_PHY_W5500
 - ETH_CS=14, ETH_IRQ=10, ETH_RST=9, ETH_SPI_SCK=13, ETH_SPI_MISO=12, ETH_SPI_MOSI=11
 
 Reference: https://www.waveshare.com/wiki/ESP32-S3-ETH
+
+### HUB75 LED Panel Wiring
+
+The HUB75 LED matrix panel is OPTIONAL — the controller works without it. If no panel is attached, the firmware still runs normally; the on-panel display code simply has nothing to drive. Skip this section if you don't want a status display.
+
+The firmware drives a 64×64 1/32-scan RGB matrix panel using the [ESP32-HUB75-MatrixPanel-I2S-DMA](https://github.com/mrfaptastic/ESP32-HUB75-MatrixPanel-I2S-DMA) library. It shows the current/upcoming workout segments (time, meters, pace) when running a workout and a swimmer animation when idle.
+
+Panel configuration (see `hub75.cpp`):
+- Width: 64, Height: 64, Chain length: 1
+- Scan type: 1/32 (E line is required for 64-row panels)
+
+GPIO mapping (ESP32-S3 → HUB75 connector):
+
+| HUB75 signal | ESP32-S3 GPIO | Purpose                          |
+|--------------|---------------|----------------------------------|
+| R1           | GPIO21        | Red, top half                    |
+| G1           | GPIO17        | Green, top half                  |
+| B1           | GPIO16        | Blue, top half                   |
+| R2           | GPIO18        | Red, bottom half                 |
+| G2           | GPIO15        | Green, bottom half               |
+| B2           | GPIO3         | Blue, bottom half                |
+| A            | GPIO40        | Row select bit 0                 |
+| B            | GPIO41        | Row select bit 1                 |
+| C            | GPIO42        | Row select bit 2                 |
+| D            | GPIO45        | Row select bit 3                 |
+| E            | GPIO39        | Row select bit 4 (64-row panels) |
+| CLK          | GPIO46        | Pixel clock                      |
+| LAT (STB)    | GPIO47        | Latch / strobe                   |
+| OE           | GPIO48        | Output enable (active low)       |
+| GND          | GND           | Connect ALL HUB75 GND pins       |
+
+The 16-pin HUB75 IDC connector is laid out (looking at the back of the panel, with the keying/notch up):
+
+```
+   R1  | G1
+   B1  | GND
+   R2  | G2
+   B2  | E
+    A  | B
+    C  | D
+  CLK  | LAT
+   OE  | GND
+```
+
+Power
+- HUB75 panels are 5 V. A 64×64 panel can pull several amps at full white; supply it from a dedicated 5 V PSU sized for your panel (do NOT power it from the ESP32 board's 5 V rail).
+- Tie panel ground and ESP32 ground together. The data lines are 3.3 V from the ESP32-S3 — most HUB75 panels accept this directly; if yours latches unreliably, add a 74AHCT245 level shifter on R1/G1/B1/R2/G2/B2/A/B/C/D/E/CLK/LAT/OE.
+
+Brightness
+- Brightness (0–100%) is persisted in `/settings.json` on LittleFS and exposed via the web UI. See `HUB75_setBrightnessPercent()` in `hub75.h`.
+
+Required library
+- Install via Library Manager: "ESP32 HUB75 LED MATRIX PANEL DMA Display" (mrfaptastic).
 
 ### Arduino IDE (ESP32-S3-ETH settings)
 
