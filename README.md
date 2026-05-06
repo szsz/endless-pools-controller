@@ -176,7 +176,7 @@ GPIO mapping (ESP32-S3 → HUB75 connector):
 | A            | GPIO40        | Row select bit 0                 |
 | B            | GPIO41        | Row select bit 1                 |
 | C            | GPIO42        | Row select bit 2                 |
-| D            | GPIO45        | Row select bit 3                 |
+| D            | GPIO45        | Row select bit 3 (see note below)|
 | E            | GPIO39        | Row select bit 4 (64-row panels) |
 | CLK          | GPIO46        | Pixel clock                      |
 | LAT (STB)    | GPIO47        | Latch / strobe                   |
@@ -195,6 +195,11 @@ The 16-pin HUB75 IDC connector is laid out (looking at the back of the panel, wi
   CLK  | LAT
    OE  | GND
 ```
+
+Note on the D pin
+- Some HUB75 panels (mostly 1/8 or 1/16 scan, but also some mislabeled or older 1/32 boards) silkscreen the D pin position as `GND`. If you see what looks like *three* GND pins on the connector instead of the usual two, the third one is almost certainly D.
+- To verify with a multimeter: with the panel powered off, set the meter to continuity and check each pin labeled "GND" against a known-good GND (e.g. the ground pad of the power input). The pin that does **not** beep / does not show continuity to other grounds is the D line — wire that to GPIO45.
+- If you wire a real GND pin to GPIO45 by mistake, the panel will only display the top half (rows 0–31) of a 64-row panel. That symptom is the giveaway.
 
 Power
 - HUB75 panels are 5 V. A 64×64 panel can pull several amps at full white; supply it from a dedicated 5 V PSU sized for your panel (do NOT power it from the ESP32 board's 5 V rail).
