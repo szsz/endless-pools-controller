@@ -33,6 +33,11 @@ static MatrixPanel_I2S_DMA *dma_display = nullptr;
 
 static uint8_t s_brightness_percent = 50;
 
+// Screen saver state
+static uint16_t s_screensaver_sec = 300;     // 5 minutes; 0 = disabled
+static bool s_display_on = true;             // current panel power state
+static uint32_t s_last_activity_ms = 0;      // last time a workout was running
+
 static uint8_t percent_to_brightness8(uint8_t p) {
   if (p > 100) p = 100;
   return (uint8_t)((p * 255 + 50) / 100);
@@ -48,12 +53,16 @@ static void settings_load() {
     if (b >= 0 && b <= 100) {
       s_brightness_percent = (uint8_t)b;
     }
+    long ss = d["screensaver_sec"] | -1;
+    if (ss >= 0 && ss <= 86400) {
+      s_screensaver_sec = (uint16_t)ss;
+    }
   }
   f.close();
 }
 
 static void settings_store() {
-  // Preserve other keys in settings.json, only update brightness
+  // Preserve other keys in settings.json, only update the keys we own here
   StaticJsonDocument<512> d;
   if (LittleFS.exists("/settings.json")) {
     File rf = LittleFS.open("/settings.json", "r");
@@ -66,10 +75,28 @@ static void settings_store() {
     }
   }
   d["brightness"] = s_brightness_percent;
+  d["screensaver_sec"] = s_screensaver_sec;
   File wf = LittleFS.open("/settings.json", "w");
   if (!wf) return;
   serializeJson(d, wf);
   wf.close();
+}
+
+// Power the panel off (clear it) / back on. Drawing functions skip output while
+// the display is off, so the cleared frame stays black until we wake.
+static void display_sleep() {
+  if (!s_display_on) return;
+  s_display_on = false;
+  if (dma_display) dma_display->clearScreen();
+}
+
+static void display_wake() {
+  if (s_display_on) return;
+  s_display_on = true;
+  if (dma_display) {
+    dma_display->setBrightness8(percent_to_brightness8(s_brightness_percent));
+    dma_display->clearScreen();
+  }
 }
 
 uint8_t HUB75_getBrightnessPercent() {
@@ -79,10 +106,41 @@ uint8_t HUB75_getBrightnessPercent() {
 void HUB75_setBrightnessPercent(uint8_t percent) {
   if (percent > 100) percent = 100;
   s_brightness_percent = percent;
+  // Adjusting brightness is user activity: wake the screen and reset the timer.
+  display_wake();
+  s_last_activity_ms = millis();
   if (dma_display) {
     dma_display->setBrightness8(percent_to_brightness8(s_brightness_percent));
   }
   settings_store();
+}
+
+uint16_t HUB75_getScreensaverSec() {
+  return s_screensaver_sec;
+}
+
+void HUB75_setScreensaverSec(uint16_t seconds) {
+  if (seconds > 86400) seconds = 86400;
+  s_screensaver_sec = seconds;
+  // Changing the setting counts as activity and gives a fresh countdown.
+  display_wake();
+  s_last_activity_ms = millis();
+  settings_store();
+}
+
+void HUB75_screensaverTick(bool workoutActive) {
+  uint32_t now = millis();
+  if (workoutActive) {
+    // Keep awake and continually push the idle deadline forward.
+    s_last_activity_ms = now;
+    display_wake();
+    return;
+  }
+  if (s_screensaver_sec == 0) return; // disabled: never turn off
+  if (s_display_on &&
+      (uint32_t)(now - s_last_activity_ms) >= (uint32_t)s_screensaver_sec * 1000UL) {
+    display_sleep();
+  }
 }
 
 
@@ -99,6 +157,10 @@ void setupHUB75() {
   settings_load();
   dma_display->setBrightness8(percent_to_brightness8(s_brightness_percent)); // 0..255
   dma_display->clearScreen();
+  // Start the screen-saver countdown from boot (turns off after the timeout if
+  // no workout is ever started).
+  s_display_on = true;
+  s_last_activity_ms = millis();
 }
 
 
@@ -106,7 +168,7 @@ void setupHUB75() {
 
 void printJSon(DynamicJsonDocument doc)
 {
-  if (!dma_display) return;
+  if (!dma_display || !s_display_on) return;
 
   // Colors
   const ColorRGB DARK_ORANGE{255, 140, 0};
@@ -313,7 +375,7 @@ void printJSon(DynamicJsonDocument doc)
 
 /* Call every ~50ms to animate a swimmer on the 64x64 panel */
 void drawSwimmerAnimationTick() {
-  if (!dma_display) return;
+  if (!dma_display || !s_display_on) return;
 
   static uint32_t tick = 0;
   tick++;

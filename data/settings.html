@@ -36,6 +36,21 @@
   </section>
 
   <section class="card">
+    <h3 style="margin-top:0;">Screen Saver</h3>
+    <div class="row">
+      <label class="inline" for="screensaver">
+        <span>Turn screen off after</span>
+        <input id="screensaver" type="number" min="0" max="1440" step="1" value="5" style="width:5rem;" />
+        <span>minutes</span>
+      </label>
+    </div>
+    <p class="muted">The screen stays on while a workout is running. The countdown
+      starts when a workout ends (or at boot if none is started). Set to 0 to keep
+      the screen always on.</p>
+    <div id="ssMsg" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
     <h3 style="margin-top:0;">Upload Files to LittleFS</h3>
     <div class="row">
       <label class="inline">PSK
@@ -59,11 +74,18 @@
     const $ = (sel) => document.querySelector(sel);
     const brightnessEl = $('#brightness');
     const brightnessValEl = $('#brightnessVal');
+    const screensaverEl = $('#screensaver');
+    const ssMsgEl = $('#ssMsg');
     const msgEl = $('#msg');
 
     function setMsg(text, ok) {
       msgEl.textContent = text || '';
       msgEl.className = ok ? 'ok' : (text ? 'err' : '');
+    }
+
+    function setSsMsg(text, ok) {
+      ssMsgEl.textContent = text || '';
+      ssMsgEl.className = ok ? 'ok' : (text ? 'err' : '');
     }
 
     async function loadSettings() {
@@ -74,10 +96,36 @@
         const b = (typeof j.brightness === 'number') ? j.brightness : 50;
         brightnessEl.value = b;
         brightnessValEl.textContent = b;
+        const ss = (typeof j.screensaver_sec === 'number') ? j.screensaver_sec : 300;
+        screensaverEl.value = Math.round(ss / 60);
       } catch (e) {
         console.error(e);
       }
     }
+
+    async function saveScreensaver(minutes) {
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ screensaver_sec: minutes * 60 })
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        screensaverEl.value = Math.round((j.screensaver_sec || 0) / 60);
+      } catch (e) {
+        console.error(e);
+        setSsMsg('Failed to save screen saver: ' + e.message, false);
+        return;
+      }
+      setSsMsg('Screen saver saved', true);
+      setTimeout(() => setSsMsg('', true), 1200);
+    }
+
+    screensaverEl.addEventListener('change', (e) => {
+      const v = parseInt(e.target.value, 10);
+      if (Number.isFinite(v) && v >= 0 && v <= 1440) saveScreensaver(v);
+    });
 
     async function saveBrightness(b) {
       try {

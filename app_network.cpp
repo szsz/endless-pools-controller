@@ -203,11 +203,12 @@ void begin()
               {
                 StaticJsonDocument<64> d;
                 d["brightness"] = HUB75_getBrightnessPercent();
+                d["screensaver_sec"] = HUB75_getScreensaverSec();
                 String out; serializeJson(d, out);
                 send_json(r, out); });
 
   g_server.on("/api/settings", HTTP_POST, [](AsyncWebServerRequest *r)
-              { r->send(200); },
+              { /* response sent in body handler */ },
               nullptr,
               [](AsyncWebServerRequest *r, uint8_t *data, size_t len, size_t index, size_t total)
               {
@@ -218,11 +219,20 @@ void begin()
                 StaticJsonDocument<128> d;
                 DeserializationError err = deserializeJson(d, g_buffer, total);
                 if (err) { r->send(400, "text/plain", "Bad JSON"); return; }
-                int b = d["brightness"] | -1;
-                if (b < 0 || b > 100) { r->send(400, "text/plain", "brightness 0..100"); return; }
-                HUB75_setBrightnessPercent((uint8_t)b);
+                // Both fields are optional; apply whichever are present.
+                if (d.containsKey("brightness")) {
+                  int b = d["brightness"] | -1;
+                  if (b < 0 || b > 100) { r->send(400, "text/plain", "brightness 0..100"); return; }
+                  HUB75_setBrightnessPercent((uint8_t)b);
+                }
+                if (d.containsKey("screensaver_sec")) {
+                  long s = d["screensaver_sec"] | -1;
+                  if (s < 0 || s > 86400) { r->send(400, "text/plain", "screensaver_sec 0..86400"); return; }
+                  HUB75_setScreensaverSec((uint16_t)s);
+                }
                 StaticJsonDocument<64> resp;
                 resp["brightness"] = HUB75_getBrightnessPercent();
+                resp["screensaver_sec"] = HUB75_getScreensaverSec();
                 String out; serializeJson(resp, out);
                 send_json(r, out);
               });

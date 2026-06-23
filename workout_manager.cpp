@@ -102,6 +102,10 @@ void WorkoutManager::stop()
 static bool s_active = false;
 void WorkoutManager::tick()
 {
+#ifdef HUB75EBABLE
+  // Keep the panel awake while a workout runs; otherwise count down to off.
+  HUB75_screensaverTick(s_active);
+#endif
   if(!s_active){
 #ifdef HUB75EBABLE
 static uint32_t prev2 =0;
