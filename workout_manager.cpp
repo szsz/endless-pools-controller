@@ -4,10 +4,7 @@
 #include "swim_machine.h"
 #include "web_ui.h"
 #include <ArduinoJson.h>
-#define HUB75EBABLE
-#ifdef HUB75EBABLE
-#include "hub75.h"
-#endif
+#include "hub75.h"   // defines HUB75_ENABLE (see hub75_config.h)
 
 #define DEBUGCRASH
 #ifdef DEBUGCRASH
@@ -34,7 +31,7 @@ static Workout current_workout_; // store currently active workout
 
 void WorkoutManager::begin()
 {
-#ifdef HUB75EBABLE
+#if HUB75_ENABLE
   setupHUB75();
 #endif
 #ifdef DEBUGCRASH
@@ -102,12 +99,12 @@ void WorkoutManager::stop()
 static bool s_active = false;
 void WorkoutManager::tick()
 {
-#ifdef HUB75EBABLE
+#if HUB75_ENABLE
   // Keep the panel awake while a workout runs; otherwise count down to off.
   HUB75_screensaverTick(s_active);
 #endif
   if(!s_active){
-#ifdef HUB75EBABLE
+#if HUB75_ENABLE
 static uint32_t prev2 =0;
   uint32_t now = millis();
   if(now > 250 && now<prev2+50)
@@ -162,8 +159,8 @@ void WorkoutManager::push_status_()
 
   String out;
   serializeJson(doc, out);
-  if(s_active){    
-#ifdef HUB75EBABLE
+  if(s_active){
+#if HUB75_ENABLE
     printJSon(doc);
 #endif
   }

@@ -2,6 +2,15 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+
+// Ethernet (W5500 over SPI) master switch. Defaults ON for the Waveshare
+// ESP32-S3-ETH board. Build with -DETH_ENABLE=0 for boards that have no W5500
+// (e.g. a plain ESP32): the SPI/W5500 init is skipped so networking goes
+// straight to WiFi instead of hanging and tripping the task watchdog.
+#ifndef ETH_ENABLE
+#define ETH_ENABLE 1
+#endif
+
 #define USE_OTA
 #ifdef USE_OTA
 #include <ArduinoOTA.h>
@@ -72,7 +81,10 @@ void NetworkSetup::setNewWifiCredentials(const String& ssid, const String& passw
 
 void NetworkSetup::begin() {
   // Load saved Wi‑Fi credentials (if any) and start connection manager
-  ConnectionManager::configure(HOSTNAME, SOFT_AP_SSID, SOFT_AP_PASS);
+  ConnectionManager::configure(HOSTNAME, SOFT_AP_SSID, SOFT_AP_PASS,
+                               /*enable_softap*/ true,
+                               /*enable_sta*/    true,
+                               /*enable_eth*/    ETH_ENABLE);
   NetworkSetup::applyWifiConfigFromFile();
   ConnectionManager::begin();
   

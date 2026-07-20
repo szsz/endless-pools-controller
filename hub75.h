@@ -2,6 +2,7 @@
 #include <Arduino.h>
 #include <vector>
 #include <ArduinoJson.h>
+#include "hub75_config.h"
 
 // Color and line specifications for multi-line rendering
 struct ColorRGB {

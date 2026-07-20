@@ -1,9 +1,12 @@
+#include "hub75.h"   // pulls in Arduino.h, ArduinoJson.h and the HUB75_ENABLE flag
+
+#if HUB75_ENABLE
+
 #include <Arduino.h>
 #include <ArduinoJson.h>
 #include <LittleFS.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <Fonts/TomThumb.h>
-#include "hub75.h"
 
 /*************** HUB75 Panel Config ***************/
 static const int PANEL_WIDTH  = 64;
@@ -608,3 +611,21 @@ void drawSwimmerAnimationTick() {
   // Head (stick-man): unfilled circle
   dma_display->drawCircle(xHead, yHead, rHead, skin);
 }
+
+#else  // ===== HUB75 disabled: no-op stubs so the sketch links without a panel =====
+
+// Brightness / screensaver values are still stored so the web API keeps working;
+// they simply have no visible effect without a panel.
+static uint8_t  s_brightness_percent = 50;
+static uint16_t s_screensaver_sec    = 300;
+
+void setupHUB75() {}
+uint8_t HUB75_getBrightnessPercent() { return s_brightness_percent; }
+void HUB75_setBrightnessPercent(uint8_t percent) { s_brightness_percent = percent > 100 ? 100 : percent; }
+uint16_t HUB75_getScreensaverSec() { return s_screensaver_sec; }
+void HUB75_setScreensaverSec(uint16_t seconds) { s_screensaver_sec = seconds; }
+void HUB75_screensaverTick(bool /*workoutActive*/) {}
+void printJSon(DynamicJsonDocument /*doc*/) {}
+void drawSwimmerAnimationTick() {}
+
+#endif  // HUB75_ENABLE
