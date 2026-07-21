@@ -391,11 +391,23 @@ void printJSon(DynamicJsonDocument doc)
     const int baselines[2] = { PANEL_HEIGHT - 8, PANEL_HEIGHT - 2 };
     int drawn = 0;
     if (!arr.isNull()) {
+      // Same rule as the classic list: show a set's swims once, not once per
+      // repetition. Seeded from the current step so its own set collapses too.
+      JsonObject cur0 = arr[0];
+      int seenSetIdx = cur0["set_index"].is<int>() ? cur0["set_index"].as<int>() : -1;
+      int seenSetRep = cur0["set_rep"].is<int>()   ? cur0["set_rep"].as<int>()   : -1;
       for (size_t i = 1; i < arr.size() && drawn < 2; ++i) {
         JsonObject o = arr[i];
         long p = o["pace100s"] | 0;
         long dsec = o["durSec"] | 0;
         const char *nt = o["note"] | "";
+
+        const int si = o["set_index"].is<int>() ? o["set_index"].as<int>() : -1;
+        const int sr = o["set_rep"].is<int>()   ? o["set_rep"].as<int>()   : -1;
+        if (si >= 0) {
+          if (si == seenSetIdx && sr != seenSetRep) continue;   // later repetition
+          if (si != seenSetIdx) { seenSetIdx = si; seenSetRep = sr; }
+        }
 
         String line;
         if (p > 0) {
@@ -457,10 +469,13 @@ void printJSon(DynamicJsonDocument doc)
   const ColorRGB MARK_SET{25, 200, 25};      // green
   const int setCount = doc["set_count"] | 0;
   const int curSetIdx = doc["set_index"].is<int>() ? doc["set_index"].as<int>() : -1;
+  const bool inSet = (curSetIdx >= 0 && setCount > 0);
 
+  const int barY = counterH + 1;             // 2px tall bar just under the counters
   int listStartY = counterH + 2;
-  if (setCount > 0) {
-    const int barY = counterH + 1;           // 2px tall bar just under the counters
+
+  if (inSet) {
+    // Inside a set: one segment per set, the one we're in shown blue.
     const int gap = (setCount > 8) ? 1 : 2;  // tighter spacing once there are many sets
     for (int i = 0; i < setCount; ++i) {
       // Spread across the whole panel: the last segment always ends at x = 63.
@@ -473,7 +488,23 @@ void printJSon(DynamicJsonDocument doc)
         dma_display->drawPixel(x, barY + 1, c);
       }
     }
-    listStartY = barY + 2 + 2;               // list clears the bar
+    listStartY = barY + 4;                   // list clears the bar
+  } else if (durSecCurrent > 0) {
+    // Not in a set: fill the bar with progress through the current swim, the
+    // colour easing from orange at the start to green as it completes.
+    long done = durSecCurrent - remTop;
+    if (done < 0) done = 0;
+    if (done > durSecCurrent) done = durSecCurrent;
+    const int filled = (int)((done * PANEL_WIDTH) / durSecCurrent);
+    const uint8_t r = (uint8_t)(255 + ((25  - 255) * done) / durSecCurrent);
+    const uint8_t g = (uint8_t)(140 + ((200 - 140) * done) / durSecCurrent);
+    const uint8_t b = (uint8_t)(0   + ((25  - 0)   * done) / durSecCurrent);
+    const uint16_t c = dma_display->color565(r, g, b);
+    for (int x = 0; x < filled && x < PANEL_WIDTH; ++x) {
+      dma_display->drawPixel(x, barY, c);
+      dma_display->drawPixel(x, barY + 1, c);
+    }
+    listStartY = barY + 4;
   }
 
   // Prepare fonts: built-in for first item; TomThumb will be used for the rest (smaller)
@@ -493,11 +524,22 @@ void printJSon(DynamicJsonDocument doc)
 
   if (!arr.isNull()) {
     size_t shown = 0;
+    // A set is stored unrolled (its swims repeat N times), but the panel lists
+    // each of a set's swims only once: after the first repetition we meet, any
+    // later repetition of that same set is skipped.
+    int seenSetIdx = -1, seenSetRep = -1;
     for (size_t i = 0; i < arr.size() && shown < 9; ++i) { // include current item
       JsonObject obj = arr[i];
       long pace = obj["pace100s"] | 0;
       long dur = obj["durSec"] | 0;
       const char* note = obj["note"] | "";
+
+      const int si = obj["set_index"].is<int>() ? obj["set_index"].as<int>() : -1;
+      const int sr = obj["set_rep"].is<int>()   ? obj["set_rep"].as<int>()   : -1;
+      if (si >= 0) {
+        if (si == seenSetIdx && sr != seenSetRep) continue;   // later repetition
+        if (si != seenSetIdx) { seenSetIdx = si; seenSetRep = sr; }
+      }
 
       // If the very first item is rest (pace == 0), skip drawing it (only show the counter)
       if (i == 0 && pace == 0) {
@@ -580,8 +622,7 @@ void printJSon(DynamicJsonDocument doc)
       // that belongs to a set. The built-in font draws downward from the cursor
       // while TomThumb draws upward from its baseline, so the marked rows are
       // computed per font or the mark ends up offset from its text.
-      const int itemSet = obj["set_index"].is<int>() ? obj["set_index"].as<int>() : -1;
-      if (i == 0 || itemSet >= 0) {
+      if (i == 0 || si >= 0) {
         int markTop, markBot;                 // [markTop, markBot)
         if (i == 0) { markTop = rowStart; markBot = rowStart + 2 * LH6; }
         else        { markTop = rowStart - 5; markBot = rowStart + 1; }

@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Small pixel fonts — 64×64 HUB75 legibility compare</title>
+<style>
+  :root { --bg:#15171c; --fg:#e8e8ea; --muted:#9aa0a8; --accent:#0077cc; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:1rem 1.25rem 3rem; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  }
+  h1 { font-size:1.15rem; margin:0 0 .4rem; }
+  h2 { font-size:1rem; margin:0; display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+  h3 { font-size:.82rem; color:var(--muted); font-weight:600; margin:0 0 .5rem; text-transform:uppercase; letter-spacing:.05em; }
+  .muted { color:var(--muted); font-size:.82rem; line-height:1.5; }
+  a { color:#6db3f2; }
+  code { background:#20242b; padding:.1rem .3rem; border-radius:4px; font-size:.9em; }
+  canvas { display:block; image-rendering:pixelated; }
+
+  .toolbar {
+    position:sticky; top:0; z-index:5; background:var(--bg);
+    border-bottom:1px solid #2a2f36; padding:.6rem 0 .7rem; margin-bottom:1rem;
+    display:flex; gap:1rem; flex-wrap:wrap; align-items:center;
+  }
+  label { display:flex; align-items:center; gap:.45rem; font-size:.85rem; }
+  select, input[type=text], input[type=number] {
+    background:#20242b; color:var(--fg); border:1px solid #3a3f47;
+    border-radius:6px; padding:.35rem .5rem; font:inherit; font-size:.85rem;
+  }
+  input[type=text] { min-width:16rem; }
+
+  .card {
+    border:1px solid #2a2f36; border-radius:10px; padding:.9rem 1rem 1rem;
+    margin:0 0 1.1rem; background:#181b21;
+  }
+  .card.current { border-color:#4ade8055; box-shadow:0 0 0 1px #4ade8022; }
+  .card-head { display:flex; gap:1.25rem; align-items:flex-start; flex-wrap:wrap; justify-content:space-between; margin-bottom:.8rem; }
+  .tag { font-size:.68rem; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+         padding:.12rem .42rem; border-radius:4px; background:#333a44; color:var(--fg); }
+  .tag.cur  { background:#14532d; color:#4ade80; }
+  .tag.pick { background:#1e3a5f; color:#7ec8ff; }
+
+  table { border-collapse:collapse; font-size:.78rem; }
+  th,td { text-align:left; padding:2px 10px 2px 0; border-bottom:1px solid #2a2f36; white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; }
+  td.num { font-variant-numeric:tabular-nums; }
+  tr.cur td { color:#4ade80; font-weight:700; }
+  table.summary td:first-child, table.summary th:first-child { padding-right:1.1rem; }
+
+  .samples { display:flex; flex-direction:column; gap:.75rem; }
+  .sample-label { font-size:.72rem; color:var(--muted); margin-bottom:.25rem; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .strips { display:flex; gap:1rem; align-items:flex-start; flex-wrap:wrap; }
+  .panel-wrap { background:#000; padding:6px; border-radius:6px; box-shadow:0 0 0 1px #333; }
+  .one-to-one { padding:4px; }
+  .warn { color:#fbbf24; }
+</style>
+</head>
+<body>
+
+<h1>Small pixel fonts — number legibility on a 64×64 HUB75 panel</h1>
+<p class="muted" style="max-width:62rem;">
+  Every Adafruit_GFX font small enough for a 64px-tall list (glyph height ≤ 8px), plus the
+  built-in 6×8 GLCD font as a baseline. Rendered with the same glyph decoder
+  <code>hub75.cpp</code> uses — GFX fonts are placed on the <em>baseline</em>, the built-in
+  font by its <em>top-left</em>. The trade-off to judge: taller/wider glyphs read better but
+  fewer characters survive the 64px line-fit truncation in <code>printJSon()</code>.
+</p>
+
+<div class="toolbar">
+  <label>Sort
+    <select id="sort">
+      <option value="height">by glyph height</option>
+      <option value="chars">by chars per 64px</option>
+      <option value="name">by name</option>
+    </select>
+  </label>
+  <label>Zoom <input type="number" id="zoom" min="3" max="14" value="7" style="width:4.5rem"></label>
+  <label>Swim line <input type="text" id="line1" value="125m 1:30 warmup"></label>
+  <label>Rest line <input type="text" id="line2" value="rest 0:20 easy"></label>
+  <label><input type="checkbox" id="grid" checked> LED gaps</label>
+</div>
+
+<div class="card">
+  <h3>Digits side by side (zoomed)</h3>
+  <div id="digitsCompare"></div>
+</div>
+
+<div class="card">
+  <h3>Summary</h3>
+  <table class="summary" id="summary">
+    <thead><tr>
+      <th>Font</th><th>Glyph h</th><th>Digit h</th><th>yAdvance</th><th>Digit xAdv</th>
+      <th>Digit chars / 64px</th><th>Lines / 64px</th><th>Swim line fits?</th>
+    </tr></thead>
+    <tbody></tbody>
+  </table>
+  <p class="muted" style="margin:.6rem 0 0;">
+    “Digit chars / 64px” counts how many characters of <code>0123456789 1:30 125m </code>
+    (repeated) fit before the 64px wrap — the honest measure of how much information a line holds.
+  </p>
+</div>
+
+<div id="cards"></div>
+
+<script id="fontdata">
+window.GLCD_FONT = [0, 0, 0, 0, 0, 62, 91, 79, 91, 62, 62, 107, 79, 107, 62, 28, 62, 124, 62, 28, 24, 60, 126, 60, 24, 28, 87, 125, 87, 28, 28, 94, 127, 94, 28, 0, 24, 60, 24, 0, 255, 231, 195, 231, 255, 0, 24, 36, 24, 0, 255, 231, 219, 231, 255, 48, 72, 58, 6, 14, 38, 41, 121, 41, 38, 64, 127, 5, 5, 7, 64, 127, 5, 37, 63, 90, 60, 231, 60, 90, 127, 62, 28, 28, 8, 8, 28, 28, 62, 127, 20, 34, 127, 34, 20, 95, 95, 0, 95, 95, 6, 9, 127, 1, 127, 0, 102, 137, 149, 106, 96, 96, 96, 96, 96, 148, 162, 255, 162, 148, 8, 4, 126, 4, 8, 16, 32, 126, 32, 16, 8, 8, 42, 28, 8, 8, 28, 42, 8, 8, 30, 16, 16, 16, 16, 12, 30, 12, 30, 12, 48, 56, 62, 56, 48, 6, 14, 62, 14, 6, 0, 0, 0, 0, 0, 0, 0, 95, 0, 0, 0, 7, 0, 7, 0, 20, 127, 20, 127, 20, 36, 42, 127, 42, 18, 35, 19, 8, 100, 98, 54, 73, 86, 32, 80, 0, 8, 7, 3, 0, 0, 28, 34, 65, 0, 0, 65, 34, 28, 0, 42, 28, 127, 28, 42, 8, 8, 62, 8, 8, 0, 128, 112, 48, 0, 8, 8, 8, 8, 8, 0, 0, 96, 96, 0, 32, 16, 8, 4, 2, 62, 81, 73, 69, 62, 0, 66, 127, 64, 0, 114, 73, 73, 73, 70, 33, 65, 73, 77, 51, 24, 20, 18, 127, 16, 39, 69, 69, 69, 57, 60, 74, 73, 73, 49, 65, 33, 17, 9, 7, 54, 73, 73, 73, 54, 70, 73, 73, 41, 30, 0, 0, 20, 0, 0, 0, 64, 52, 0, 0, 0, 8, 20, 34, 65, 20, 20, 20, 20, 20, 0, 65, 34, 20, 8, 2, 1, 89, 9, 6, 62, 65, 93, 89, 78, 124, 18, 17, 18, 124, 127, 73, 73, 73, 54, 62, 65, 65, 65, 34, 127, 65, 65, 65, 62, 127, 73, 73, 73, 65, 127, 9, 9, 9, 1, 62, 65, 65, 81, 115, 127, 8, 8, 8, 127, 0, 65, 127, 65, 0, 32, 64, 65, 63, 1, 127, 8, 20, 34, 65, 127, 64, 64, 64, 64, 127, 2, 28, 2, 127, 127, 4, 8, 16, 127, 62, 65, 65, 65, 62, 127, 9, 9, 9, 6, 62, 65, 81, 33, 94, 127, 9, 25, 41, 70, 38, 73, 73, 73, 50, 3, 1, 127, 1, 3, 63, 64, 64, 64, 63, 31, 32, 64, 32, 31, 63, 64, 56, 64, 63, 99, 20, 8, 20, 99, 3, 4, 120, 4, 3, 97, 89, 73, 77, 67, 0, 127, 65, 65, 65, 2, 4, 8, 16, 32, 0, 65, 65, 65, 127, 4, 2, 1, 2, 4, 64, 64, 64, 64, 64, 0, 3, 7, 8, 0, 32, 84, 84, 120, 64, 127, 40, 68, 68, 56, 56, 68, 68, 68, 40, 56, 68, 68, 40, 127, 56, 84, 84, 84, 24, 0, 8, 126, 9, 2, 24, 164, 164, 156, 120, 127, 8, 4, 4, 120, 0, 68, 125, 64, 0, 32, 64, 64, 61, 0, 127, 16, 40, 68, 0, 0, 65, 127, 64, 0, 124, 4, 120, 4, 120, 124, 8, 4, 4, 120, 56, 68, 68, 68, 56, 252, 24, 36, 36, 24, 24, 36, 36, 24, 252, 124, 8, 4, 4, 8, 72, 84, 84, 84, 36, 4, 4, 63, 68, 36, 60, 64, 64, 32, 124, 28, 32, 64, 32, 28, 60, 64, 48, 64, 60, 68, 40, 16, 40, 68, 76, 144, 144, 144, 124, 68, 100, 84, 76, 68, 0, 8, 54, 65, 0, 0, 0, 119, 0, 0, 0, 65, 54, 8, 0, 2, 1, 2, 4, 2, 60, 38, 35, 38, 60, 30, 161, 161, 97, 18, 58, 64, 64, 32, 122, 56, 84, 84, 85, 89, 33, 85, 85, 121, 65, 34, 84, 84, 120, 66, 33, 85, 84, 120, 64, 32, 84, 85, 121, 64, 12, 30, 82, 114, 18, 57, 85, 85, 85, 89, 57, 84, 84, 84, 89, 57, 85, 84, 84, 88, 0, 0, 69, 124, 65, 0, 2, 69, 125, 66, 0, 1, 69, 124, 64, 125, 18, 17, 18, 125, 240, 40, 37, 40, 240, 124, 84, 85, 69, 0, 32, 84, 84, 124, 84, 124, 10, 9, 127, 73, 50, 73, 73, 73, 50, 58, 68, 68, 68, 58, 50, 74, 72, 72, 48, 58, 65, 65, 33, 122, 58, 66, 64, 32, 120, 0, 157, 160, 160, 125, 61, 66, 66, 66, 61, 61, 64, 64, 64, 61, 60, 36, 255, 36, 36, 72, 126, 73, 67, 102, 43, 47, 252, 47, 43, 255, 9, 41, 246, 32, 192, 136, 126, 9, 3, 32, 84, 84, 121, 65, 0, 0, 68, 125, 65, 48, 72, 72, 74, 50, 56, 64, 64, 34, 122, 0, 122, 10, 10, 114, 125, 13, 25, 49, 125, 38, 41, 41, 47, 40, 38, 41, 41, 41, 38, 48, 72, 77, 64, 32, 56, 8, 8, 8, 8, 8, 8, 8, 8, 56, 47, 16, 200, 172, 186, 47, 16, 40, 52, 250, 0, 0, 123, 0, 0, 8, 20, 42, 20, 34, 34, 20, 42, 20, 8, 85, 0, 85, 0, 85, 170, 85, 170, 85, 170, 255, 85, 255, 85, 255, 0, 0, 0, 255, 0, 16, 16, 16, 255, 0, 20, 20, 20, 255, 0, 16, 16, 255, 0, 255, 16, 16, 240, 16, 240, 20, 20, 20, 252, 0, 20, 20, 247, 0, 255, 0, 0, 255, 0, 255, 20, 20, 244, 4, 252, 20, 20, 23, 16, 31, 16, 16, 31, 16, 31, 20, 20, 20, 31, 0, 16, 16, 16, 240, 0, 0, 0, 0, 31, 16, 16, 16, 16, 31, 16, 16, 16, 16, 240, 16, 0, 0, 0, 255, 16, 16, 16, 16, 16, 16, 16, 16, 16, 255, 16, 0, 0, 0, 255, 20, 0, 0, 255, 0, 255, 0, 0, 31, 16, 23, 0, 0, 252, 4, 244, 20, 20, 23, 16, 23, 20, 20, 244, 4, 244, 0, 0, 255, 0, 247, 20, 20, 20, 20, 20, 20, 20, 247, 0, 247, 20, 20, 20, 23, 20, 16, 16, 31, 16, 31, 20, 20, 20, 244, 20, 16, 16, 240, 16, 240, 0, 0, 31, 16, 31, 0, 0, 0, 31, 20, 0, 0, 0, 252, 20, 0, 0, 240, 16, 240, 16, 16, 255, 16, 255, 20, 20, 20, 255, 20, 16, 16, 16, 31, 0, 0, 0, 0, 240, 16, 255, 255, 255, 255, 255, 240, 240, 240, 240, 240, 255, 255, 255, 0, 0, 0, 0, 0, 255, 255, 15, 15, 15, 15, 15, 56, 68, 68, 56, 68, 252, 74, 74, 74, 52, 126, 2, 2, 6, 6, 2, 126, 2, 126, 2, 99, 85, 73, 65, 99, 56, 68, 68, 60, 4, 64, 126, 32, 30, 32, 6, 2, 126, 2, 2, 153, 165, 231, 165, 153, 28, 42, 73, 42, 28, 76, 114, 1, 114, 76, 48, 74, 77, 77, 48, 48, 72, 120, 72, 48, 188, 98, 90, 70, 61, 62, 73, 73, 73, 0, 126, 1, 1, 1, 126, 42, 42, 42, 42, 42, 68, 68, 95, 68, 68, 64, 81, 74, 68, 64, 64, 68, 74, 81, 64, 0, 0, 255, 1, 3, 224, 128, 255, 0, 0, 8, 8, 107, 107, 8, 54, 18, 54, 36, 54, 6, 15, 9, 15, 6, 0, 0, 24, 24, 0, 0, 0, 16, 16, 0, 48, 64, 255, 1, 1, 0, 31, 1, 1, 30, 0, 25, 29, 23, 18, 0, 60, 60, 60, 60, 0, 0, 0, 0, 0];
+window.GFX_FONTS = {
+  "TomThumb": {"first": 32, "last": 126, "yAdvance": 6, "bitmaps": [0, 232, 180, 190, 250, 121, 228, 133, 66, 219, 214, 192, 106, 64, 149, 128, 170, 128, 93, 0, 96, 224, 128, 37, 72, 118, 220, 117, 64, 197, 78, 197, 28, 183, 146, 243, 28, 115, 222, 229, 72, 247, 222, 247, 156, 160, 70, 42, 34, 227, 128, 136, 168, 229, 4, 87, 198, 87, 218, 215, 92, 114, 70, 214, 220, 243, 206, 243, 200, 115, 214, 183, 218, 233, 46, 36, 212, 183, 90, 146, 78, 191, 218, 191, 250, 86, 212, 215, 72, 86, 246, 215, 234, 113, 28, 233, 36, 182, 214, 182, 164, 183, 250, 181, 90, 181, 36, 229, 78, 242, 78, 136, 128, 228, 158, 84, 224, 144, 206, 240, 154, 220, 114, 48, 46, 214, 119, 48, 43, 164, 119, 148, 154, 218, 184, 32, 154, 128, 151, 106, 201, 46, 255, 208, 214, 208, 86, 160, 214, 232, 118, 178, 114, 64, 121, 224, 93, 38, 182, 176, 183, 160, 191, 240, 169, 80, 181, 148, 239, 112, 106, 38, 216, 200, 172, 120], "glyphs": [[0, 1, 1, 2, 0, -5], [1, 1, 5, 2, 0, -5], [2, 3, 2, 4, 0, -5], [3, 3, 5, 4, 0, -5], [5, 3, 5, 4, 0, -5], [7, 3, 5, 4, 0, -5], [9, 3, 5, 4, 0, -5], [11, 1, 2, 2, 0, -5], [12, 2, 5, 3, 0, -5], [14, 2, 5, 3, 0, -5], [16, 3, 3, 4, 0, -5], [18, 3, 3, 4, 0, -4], [20, 2, 2, 3, 0, -2], [21, 3, 1, 4, 0, -3], [22, 1, 1, 2, 0, -1], [23, 3, 5, 4, 0, -5], [25, 3, 5, 4, 0, -5], [27, 2, 5, 3, 0, -5], [29, 3, 5, 4, 0, -5], [31, 3, 5, 4, 0, -5], [33, 3, 5, 4, 0, -5], [35, 3, 5, 4, 0, -5], [37, 3, 5, 4, 0, -5], [39, 3, 5, 4, 0, -5], [41, 3, 5, 4, 0, -5], [43, 3, 5, 4, 0, -5], [45, 1, 3, 2, 0, -4], [46, 2, 4, 3, 0, -4], [47, 3, 5, 4, 0, -5], [49, 3, 3, 4, 0, -4], [51, 3, 5, 4, 0, -5], [53, 3, 5, 4, 0, -5], [55, 3, 5, 4, 0, -5], [57, 3, 5, 4, 0, -5], [59, 3, 5, 4, 0, -5], [61, 3, 5, 4, 0, -5], [63, 3, 5, 4, 0, -5], [65, 3, 5, 4, 0, -5], [67, 3, 5, 4, 0, -5], [69, 3, 5, 4, 0, -5], [71, 3, 5, 4, 0, -5], [73, 3, 5, 4, 0, -5], [75, 3, 5, 4, 0, -5], [77, 3, 5, 4, 0, -5], [79, 3, 5, 4, 0, -5], [81, 3, 5, 4, 0, -5], [83, 3, 5, 4, 0, -5], [85, 3, 5, 4, 0, -5], [87, 3, 5, 4, 0, -5], [89, 3, 5, 4, 0, -5], [91, 3, 5, 4, 0, -5], [93, 3, 5, 4, 0, -5], [95, 3, 5, 4, 0, -5], [97, 3, 5, 4, 0, -5], [99, 3, 5, 4, 0, -5], [101, 3, 5, 4, 0, -5], [103, 3, 5, 4, 0, -5], [105, 3, 5, 4, 0, -5], [107, 3, 5, 4, 0, -5], [109, 3, 5, 4, 0, -5], [111, 3, 3, 4, 0, -4], [113, 3, 5, 4, 0, -5], [115, 3, 2, 4, 0, -5], [116, 3, 1, 4, 0, -1], [117, 2, 2, 3, 0, -5], [118, 3, 4, 4, 0, -4], [120, 3, 5, 4, 0, -5], [122, 3, 4, 4, 0, -4], [124, 3, 5, 4, 0, -5], [126, 3, 4, 4, 0, -4], [128, 3, 5, 4, 0, -5], [130, 3, 5, 4, 0, -4], [132, 3, 5, 4, 0, -5], [134, 1, 5, 2, 0, -5], [135, 3, 6, 4, 0, -5], [138, 3, 5, 4, 0, -5], [140, 3, 5, 4, 0, -5], [142, 3, 4, 4, 0, -4], [144, 3, 4, 4, 0, -4], [146, 3, 4, 4, 0, -4], [148, 3, 5, 4, 0, -4], [150, 3, 5, 4, 0, -4], [152, 3, 4, 4, 0, -4], [154, 3, 4, 4, 0, -4], [156, 3, 5, 4, 0, -5], [158, 3, 4, 4, 0, -4], [160, 3, 4, 4, 0, -4], [162, 3, 4, 4, 0, -4], [164, 3, 4, 4, 0, -4], [166, 3, 5, 4, 0, -4], [168, 3, 4, 4, 0, -4], [170, 3, 5, 4, 0, -5], [172, 1, 5, 2, 0, -5], [173, 3, 5, 4, 0, -5], [175, 3, 2, 4, 0, -5]]},
+  "Picopixel": {"first": 32, "last": 126, "yAdvance": 7, "bitmaps": [232, 180, 87, 213, 245, 0, 78, 62, 128, 165, 74, 74, 90, 80, 192, 106, 64, 149, 128, 170, 128, 93, 0, 96, 224, 128, 37, 72, 86, 212, 117, 64, 197, 78, 197, 28, 151, 146, 243, 28, 83, 84, 229, 72, 85, 84, 85, 148, 160, 70, 100, 227, 128, 152, 197, 4, 86, 198, 87, 218, 215, 92, 114, 70, 214, 220, 243, 206, 243, 72, 114, 212, 183, 218, 248, 36, 212, 187, 90, 146, 78, 142, 235, 88, 128, 157, 185, 144, 86, 212, 215, 72, 86, 212, 64, 215, 90, 113, 28, 233, 36, 182, 212, 182, 164, 140, 107, 85, 0, 181, 90, 181, 36, 229, 78, 234, 192, 145, 18, 213, 192, 84, 240, 144, 199, 240, 147, 94, 113, 128, 37, 222, 94, 48, 110, 128, 119, 156, 147, 90, 184, 69, 96, 146, 234, 170, 64, 213, 106, 214, 128, 85, 0, 215, 64, 117, 144, 232, 113, 224, 186, 64, 181, 128, 181, 0, 141, 84, 170, 128, 172, 224, 229, 112, 106, 38, 252, 200, 172, 90], "glyphs": [[0, 0, 0, 2, 0, 1], [0, 1, 5, 2, 0, -4], [1, 3, 2, 4, 0, -4], [2, 5, 5, 6, 0, -4], [6, 3, 6, 4, 0, -4], [9, 3, 5, 4, 0, -4], [11, 4, 5, 5, 0, -4], [14, 1, 2, 2, 0, -4], [15, 2, 5, 3, 0, -4], [17, 2, 5, 3, 0, -4], [19, 3, 3, 4, 0, -3], [21, 3, 3, 4, 0, -3], [23, 2, 2, 3, 0, 0], [24, 3, 1, 4, 0, -2], [25, 1, 1, 2, 0, 0], [26, 3, 5, 4, 0, -4], [28, 3, 5, 4, 0, -4], [30, 2, 5, 3, 0, -4], [32, 3, 5, 4, 0, -4], [34, 3, 5, 4, 0, -4], [36, 3, 5, 4, 0, -4], [38, 3, 5, 4, 0, -4], [40, 3, 5, 4, 0, -4], [42, 3, 5, 4, 0, -4], [44, 3, 5, 4, 0, -4], [46, 3, 5, 4, 0, -4], [48, 1, 3, 2, 0, -3], [49, 2, 4, 3, 0, -3], [50, 2, 3, 3, 0, -3], [51, 3, 3, 4, 0, -3], [53, 2, 3, 3, 0, -3], [54, 3, 5, 4, 0, -4], [56, 3, 5, 4, 0, -4], [58, 3, 5, 4, 0, -4], [60, 3, 5, 4, 0, -4], [62, 3, 5, 4, 0, -4], [64, 3, 5, 4, 0, -4], [66, 3, 5, 4, 0, -4], [68, 3, 5, 4, 0, -4], [70, 3, 5, 4, 0, -4], [72, 3, 5, 4, 0, -4], [74, 1, 5, 2, 0, -4], [75, 3, 5, 4, 0, -4], [77, 3, 5, 4, 0, -4], [79, 3, 5, 4, 0, -4], [81, 5, 5, 6, 0, -4], [85, 4, 5, 5, 0, -4], [88, 3, 5, 4, 0, -4], [90, 3, 5, 4, 0, -4], [92, 3, 6, 4, 0, -4], [95, 3, 5, 4, 0, -4], [97, 3, 5, 4, 0, -4], [99, 3, 5, 4, 0, -4], [101, 3, 5, 4, 0, -4], [103, 3, 5, 4, 0, -4], [105, 5, 5, 6, 0, -4], [109, 3, 5, 4, 0, -4], [111, 3, 5, 4, 0, -4], [113, 3, 5, 4, 0, -4], [115, 2, 5, 3, 0, -4], [117, 3, 5, 4, 0, -4], [119, 2, 5, 3, 0, -4], [121, 3, 2, 4, 0, -4], [122, 4, 1, 4, 0, 1], [123, 2, 2, 3, 0, -4], [124, 3, 4, 4, 0, -3], [126, 3, 5, 4, 0, -4], [128, 3, 3, 4, 0, -2], [130, 3, 5, 4, 0, -4], [132, 3, 4, 4, 0, -3], [134, 2, 5, 3, 0, -4], [136, 3, 5, 4, 0, -3], [138, 3, 5, 4, 0, -4], [140, 1, 5, 2, 0, -4], [141, 2, 6, 3, 0, -4], [143, 3, 5, 4, 0, -4], [145, 2, 5, 3, 0, -4], [147, 5, 3, 6, 0, -2], [149, 3, 3, 4, 0, -2], [151, 3, 3, 4, 0, -2], [153, 3, 4, 4, 0, -2], [155, 3, 4, 4, 0, -2], [157, 2, 3, 3, 0, -2], [158, 3, 4, 4, 0, -3], [160, 2, 5, 3, 0, -4], [162, 3, 3, 4, 0, -2], [164, 3, 3, 4, 0, -2], [166, 5, 3, 6, 0, -2], [168, 3, 3, 4, 0, -2], [170, 3, 4, 4, 0, -2], [172, 3, 4, 4, 0, -3], [174, 3, 5, 4, 0, -4], [176, 1, 6, 2, 0, -4], [177, 3, 5, 4, 0, -4], [179, 4, 2, 5, 0, -3]]},
+  "Org_01": {"first": 32, "last": 126, "yAdvance": 7, "bitmaps": [232, 160, 87, 213, 245, 0, 253, 62, 95, 128, 136, 136, 136, 128, 244, 191, 46, 128, 128, 106, 64, 149, 128, 170, 128, 93, 0, 192, 240, 128, 8, 136, 136, 0, 252, 99, 31, 128, 248, 248, 127, 15, 128, 248, 126, 31, 128, 140, 126, 16, 128, 252, 62, 31, 128, 252, 63, 31, 128, 248, 66, 16, 128, 252, 127, 31, 128, 252, 126, 31, 128, 144, 176, 42, 34, 240, 240, 136, 168, 248, 78, 2, 0, 253, 111, 15, 128, 252, 127, 24, 128, 244, 125, 31, 0, 252, 33, 15, 128, 244, 99, 31, 0, 252, 63, 15, 128, 252, 63, 8, 0, 252, 47, 31, 128, 140, 127, 24, 128, 249, 8, 79, 128, 120, 133, 47, 128, 141, 177, 104, 128, 132, 33, 15, 128, 253, 107, 90, 128, 252, 99, 24, 128, 252, 99, 31, 128, 252, 127, 8, 0, 252, 99, 63, 128, 252, 127, 41, 0, 252, 62, 31, 128, 249, 8, 66, 0, 140, 99, 31, 128, 140, 98, 162, 0, 173, 107, 95, 128, 138, 136, 168, 128, 140, 84, 66, 0, 248, 127, 15, 128, 234, 192, 130, 8, 32, 128, 213, 192, 84, 248, 128, 241, 255, 143, 153, 240, 248, 143, 31, 153, 240, 255, 143, 107, 164, 249, 159, 16, 143, 153, 144, 240, 85, 192, 138, 249, 144, 248, 253, 99, 16, 249, 153, 249, 159, 249, 159, 128, 249, 159, 32, 248, 136, 71, 31, 39, 200, 66, 0, 153, 159, 153, 151, 140, 107, 240, 150, 105, 153, 159, 16, 46, 143, 43, 34, 248, 137, 168, 15, 224], "glyphs": [[0, 0, 0, 6, 0, 1], [0, 1, 5, 2, 0, -4], [1, 3, 1, 4, 0, -4], [2, 5, 5, 6, 0, -4], [6, 5, 5, 6, 0, -4], [10, 5, 5, 6, 0, -4], [14, 5, 5, 6, 0, -4], [18, 1, 1, 2, 0, -4], [19, 2, 5, 3, 0, -4], [21, 2, 5, 3, 0, -4], [23, 3, 3, 4, 0, -3], [25, 3, 3, 4, 0, -3], [27, 1, 2, 2, 0, 0], [28, 4, 1, 5, 0, -2], [29, 1, 1, 2, 0, 0], [30, 5, 5, 6, 0, -4], [34, 5, 5, 6, 0, -4], [38, 1, 5, 2, 0, -4], [39, 5, 5, 6, 0, -4], [43, 5, 5, 6, 0, -4], [47, 5, 5, 6, 0, -4], [51, 5, 5, 6, 0, -4], [55, 5, 5, 6, 0, -4], [59, 5, 5, 6, 0, -4], [63, 5, 5, 6, 0, -4], [67, 5, 5, 6, 0, -4], [71, 1, 4, 2, 0, -3], [72, 1, 4, 2, 0, -3], [73, 3, 5, 4, 0, -4], [75, 4, 3, 5, 0, -3], [77, 3, 5, 4, 0, -4], [79, 5, 5, 6, 0, -4], [83, 5, 5, 6, 0, -4], [87, 5, 5, 6, 0, -4], [91, 5, 5, 6, 0, -4], [95, 5, 5, 6, 0, -4], [99, 5, 5, 6, 0, -4], [103, 5, 5, 6, 0, -4], [107, 5, 5, 6, 0, -4], [111, 5, 5, 6, 0, -4], [115, 5, 5, 6, 0, -4], [119, 5, 5, 6, 0, -4], [123, 5, 5, 6, 0, -4], [127, 5, 5, 6, 0, -4], [131, 5, 5, 6, 0, -4], [135, 5, 5, 6, 0, -4], [139, 5, 5, 6, 0, -4], [143, 5, 5, 6, 0, -4], [147, 5, 5, 6, 0, -4], [151, 5, 5, 6, 0, -4], [155, 5, 5, 6, 0, -4], [159, 5, 5, 6, 0, -4], [163, 5, 5, 6, 0, -4], [167, 5, 5, 6, 0, -4], [171, 5, 5, 6, 0, -4], [175, 5, 5, 6, 0, -4], [179, 5, 5, 6, 0, -4], [183, 5, 5, 6, 0, -4], [187, 5, 5, 6, 0, -4], [191, 2, 5, 3, 0, -4], [193, 5, 5, 6, 0, -4], [197, 2, 5, 3, 0, -4], [199, 3, 2, 4, 0, -4], [200, 5, 1, 6, 0, 1], [201, 1, 1, 2, 0, -4], [202, 4, 4, 5, 0, -3], [204, 4, 5, 5, 0, -4], [207, 4, 4, 5, 0, -3], [209, 4, 5, 5, 0, -4], [212, 4, 4, 5, 0, -3], [214, 3, 5, 4, 0, -4], [216, 4, 5, 5, 0, -3], [219, 4, 5, 5, 0, -4], [222, 1, 4, 2, 0, -3], [223, 2, 5, 3, 0, -3], [225, 4, 5, 5, 0, -4], [228, 1, 5, 2, 0, -4], [229, 5, 4, 6, 0, -3], [232, 4, 4, 5, 0, -3], [234, 4, 4, 5, 0, -3], [236, 4, 5, 5, 0, -3], [239, 4, 5, 5, 0, -3], [242, 4, 4, 5, 0, -3], [244, 4, 4, 5, 0, -3], [246, 5, 5, 6, 0, -4], [250, 4, 4, 5, 0, -3], [252, 4, 4, 5, 0, -3], [254, 5, 4, 6, 0, -3], [257, 4, 4, 5, 0, -3], [259, 4, 5, 5, 0, -3], [262, 4, 4, 5, 0, -3], [264, 3, 5, 4, 0, -4], [266, 1, 5, 2, 0, -4], [267, 3, 5, 4, 0, -4], [269, 5, 3, 6, 0, -3]]},
+  "Tiny3x3a2pt7b": {"first": 32, "last": 126, "yAdvance": 4, "bitmaps": [192, 180, 191, 128, 107, 0, 221, 128, 89, 128, 128, 100, 152, 240, 93, 0, 192, 224, 128, 42, 0, 85, 0, 148, 201, 128, 239, 128, 188, 128, 107, 0, 159, 128, 228, 128, 127, 0, 252, 128, 160, 88, 100, 227, 128, 152, 216, 216, 128, 94, 128, 223, 128, 113, 128, 215, 0, 251, 128, 250, 0, 215, 128, 190, 128, 224, 39, 0, 186, 128, 147, 128, 254, 128, 246, 128, 247, 128, 254, 0, 247, 0, 222, 128, 107, 0, 233, 0, 183, 128, 181, 0, 191, 128, 170, 128, 169, 0, 235, 128, 236, 136, 128, 220, 84, 224, 144, 112, 188, 240, 124, 176, 104, 252, 188, 192, 88, 154, 128, 164, 220, 212, 240, 248, 244, 224, 96, 89, 128, 188, 168, 236, 240, 172, 128, 144, 121, 128, 240, 207, 0, 120], "glyphs": [[0, 0, 0, 4, 0, 1], [0, 1, 2, 3, 1, -2], [1, 3, 2, 4, 0, -2], [2, 3, 3, 4, 0, -2], [4, 3, 3, 4, 0, -2], [6, 3, 3, 4, 0, -2], [8, 3, 3, 4, 0, -2], [10, 1, 1, 3, 1, -2], [11, 2, 3, 3, 0, -2], [12, 2, 3, 4, 1, -2], [13, 2, 2, 4, 1, -2], [14, 3, 3, 4, 0, -2], [16, 1, 2, 2, 0, 0], [17, 3, 1, 4, 0, -1], [18, 1, 1, 2, 0, 0], [19, 3, 3, 4, 0, -2], [21, 3, 3, 4, 0, -2], [23, 2, 3, 3, 0, -2], [24, 3, 3, 4, 0, -2], [26, 3, 3, 4, 0, -2], [28, 3, 3, 4, 0, -2], [30, 3, 3, 4, 0, -2], [32, 3, 3, 4, 0, -2], [34, 3, 3, 4, 0, -2], [36, 3, 3, 4, 0, -2], [38, 3, 3, 4, 0, -2], [40, 1, 3, 3, 1, -2], [41, 2, 3, 3, 0, -1], [42, 2, 3, 3, 0, -2], [43, 3, 3, 4, 0, -2], [45, 2, 3, 4, 1, -2], [46, 2, 3, 4, 1, -2], [47, 3, 3, 4, 0, -2], [49, 3, 3, 4, 0, -2], [51, 3, 3, 4, 0, -2], [53, 3, 3, 4, 0, -2], [55, 3, 3, 4, 0, -2], [57, 3, 3, 4, 0, -2], [59, 3, 3, 4, 0, -2], [61, 3, 3, 4, 0, -2], [63, 3, 3, 4, 0, -2], [65, 1, 3, 3, 1, -2], [66, 3, 3, 4, 0, -2], [68, 3, 3, 4, 0, -2], [70, 3, 3, 4, 0, -2], [72, 3, 3, 4, 0, -2], [74, 3, 3, 4, 0, -2], [76, 3, 3, 4, 0, -2], [78, 3, 3, 4, 0, -2], [80, 3, 3, 4, 0, -2], [82, 3, 3, 4, 0, -2], [84, 3, 3, 4, 0, -2], [86, 3, 3, 4, 0, -2], [88, 3, 3, 4, 0, -2], [90, 3, 3, 4, 0, -2], [92, 3, 3, 4, 0, -2], [94, 3, 3, 4, 0, -2], [96, 3, 3, 4, 0, -2], [98, 3, 3, 4, 0, -2], [100, 2, 3, 3, 0, -2], [101, 3, 3, 4, 0, -2], [103, 2, 3, 4, 1, -2], [104, 3, 2, 4, 0, -2], [105, 3, 1, 4, 0, 0], [106, 2, 2, 3, 0, -2], [107, 2, 2, 3, 0, -1], [108, 2, 3, 3, 0, -2], [109, 2, 2, 3, 0, -1], [110, 2, 3, 3, 0, -2], [111, 2, 2, 3, 0, -1], [112, 2, 3, 3, 0, -2], [113, 2, 3, 3, 0, -1], [114, 2, 3, 3, 0, -2], [115, 1, 2, 2, 0, -1], [116, 2, 3, 3, 0, -1], [117, 3, 3, 4, 0, -2], [119, 2, 3, 3, 0, -2], [120, 3, 2, 4, 0, -1], [121, 3, 2, 4, 0, -1], [122, 2, 2, 3, 0, -1], [123, 2, 3, 3, 0, -1], [124, 2, 3, 3, 0, -1], [125, 2, 2, 3, 0, -1], [126, 2, 2, 3, 0, -1], [127, 3, 3, 4, 0, -2], [129, 3, 2, 4, 0, -1], [130, 3, 2, 4, 0, -1], [131, 3, 2, 4, 0, -1], [132, 2, 2, 3, 0, -1], [133, 3, 3, 4, 0, -1], [135, 2, 2, 3, 0, -1], [136, 3, 3, 4, 0, -2], [138, 1, 4, 3, 1, -2], [139, 3, 3, 4, 0, -2], [141, 3, 2, 4, 0, -2]]},
+};
+</script>
+
+<script>
+/* ============================================================
+   Adafruit_GFX-compatible glyph decoder.
+   Same logic as viewer/hub75.html (drawCharGFX / drawCharBuiltin),
+   generalised over an arbitrary framebuffer size.
+   ============================================================ */
+const PANEL_W = 64;
+const c565 = (r, g, b) => ((r & 0xF8) << 16) | ((g & 0xFC) << 8) | (b & 0xF8);
+const LIST_COLOR = c565(205, 133, 63);   // the colour hub75.cpp uses for list rows
+
+function makeFB(w, h) {
+  const d = new Int32Array(w * h); d.fill(-1);
+  return { w, h, d };
+}
+function px(fb, x, y, c) {
+  x |= 0; y |= 0;
+  if (x >= 0 && x < fb.w && y >= 0 && y < fb.h) fb.d[y * fb.w + x] = c;
+}
+
+/* built-in 6x8 GLCD: cursor (x,y) is the glyph's TOP-LEFT */
+function drawCharBuiltin(fb, x, y, ch, color) {
+  const c = ch.charCodeAt(0) & 0xFF;
+  for (let i = 0; i < 5; i++) {
+    const line = window.GLCD_FONT[c * 5 + i];
+    for (let j = 0; j < 8; j++) if (line & (1 << j)) px(fb, x + i, y + j, color);
+  }
+  return 6;
+}
+
+/* GFXfont: cursor (x,y) is the BASELINE */
+function drawCharGFX(fb, x, y, ch, color, font) {
+  const c = ch.charCodeAt(0);
+  if (c < font.first || c > font.last) return 0;
+  const g = font.glyphs[c - font.first];
+  const off = g[0], gw = g[1], gh = g[2], xAdv = g[3], xOff = g[4], yOff = g[5];
+  let bo = off, bits = 0, bit = 0;
+  for (let yy = 0; yy < gh; yy++) {
+    for (let xx = 0; xx < gw; xx++) {
+      if ((bit++ & 7) === 0) bits = font.bitmaps[bo++];
+      if (bits & 0x80) px(fb, x + xOff + xx, y + yOff + yy, color);
+      bits = (bits << 1) & 0xFF;
+    }
+  }
+  return xAdv;
+}
+
+/* ---- unified font wrapper --------------------------------- */
+function charAdvance(f, ch) {
+  if (f.kind === 'glcd') return 6;
+  const c = ch.charCodeAt(0);
+  if (c < f.gfx.first || c > f.gfx.last) return 0;
+  return f.gfx.glyphs[c - f.gfx.first][3];
+}
+function textWidth(f, str) {
+  let w = 0;
+  for (const ch of str) w += charAdvance(f, ch);
+  return w;
+}
+function drawText(fb, x, yBase, str, color, f) {
+  let cx = x;
+  for (const ch of str) {
+    cx += (f.kind === 'glcd')
+      ? drawCharBuiltin(fb, cx, yBase - f.ascent, ch, color)
+      : drawCharGFX(fb, cx, yBase, ch, color, f.gfx);
+  }
+}
+/* mirrors the `while (bw > PANEL_WIDTH) drop last char` truncation in hub75.cpp */
+function fitText(f, str, maxW) {
+  let s = str;
+  while (textWidth(f, s) > maxW && s.length > 1) s = s.slice(0, -1);
+  return s;
+}
+
+/* ---- metrics ---------------------------------------------- */
+const DIGIT_PROBE = '0123456789 1:30 125m ';
+
+function buildFont(name, gfx) {
+  const f = { name: name, kind: 'gfx', gfx: gfx };
+  let ascent = 0, descent = 0, height = 0;
+  for (let c = gfx.first; c <= gfx.last; c++) {
+    const g = gfx.glyphs[c - gfx.first];
+    if (!g[1] || !g[2]) continue;            // blank glyph (space)
+    height = Math.max(height, g[2]);
+    ascent = Math.max(ascent, -g[5]);
+    descent = Math.max(descent, g[5] + g[2]);
+  }
+  f.height = height; f.ascent = ascent; f.descent = Math.max(0, descent);
+  f.yAdvance = gfx.yAdvance;
+  return f;
+}
+function buildGLCD() {
+  return { name: 'GLCD 6×8 (built-in)', kind: 'glcd',
+           height: 8, ascent: 7, descent: 1, yAdvance: 8 };
+}
+
+function digitHeight(f) {
+  if (f.kind === 'glcd') return 7;
+  let h = 0;
+  for (let d = 0; d <= 9; d++) {
+    const g = f.gfx.glyphs[String(d).charCodeAt(0) - f.gfx.first];
+    h = Math.max(h, g[2]);
+  }
+  return h;
+}
+
+function annotate(f) {
+  f.digitHeight = digitHeight(f);
+  // digit advances
+  const advs = [];
+  for (let d = 0; d <= 9; d++) advs.push(charAdvance(f, String(d)));
+  const lo = Math.min.apply(null, advs), hi = Math.max.apply(null, advs);
+  f.digitAdv = lo === hi ? String(lo) : lo + '–' + hi;
+
+  // how many chars of the digit-heavy probe fit in 64px
+  let n = 0, w = 0;
+  for (;;) {
+    const ch = DIGIT_PROBE[n % DIGIT_PROBE.length];
+    const a = charAdvance(f, ch);
+    if (w + a > PANEL_W) break;
+    w += a; n++;
+    if (n > 200) break;
+  }
+  f.charsPer64 = n;
+
+  // line height actually needed, and how many rows fit on the panel
+  f.stripH = Math.max(f.yAdvance, f.ascent + f.descent);
+  f.linesPer64 = Math.floor(64 / f.yAdvance);
+  return f;
+}
+
+/* ============================================================
+   Painting
+   ============================================================ */
+let ZOOM = 7, GRID = true;
+
+function paint(canvas, fb, cell) {
+  const gap = (GRID && cell >= 4) ? 1 : 0;
+  canvas.width = fb.w * cell;
+  canvas.height = fb.h * cell;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < fb.h; y++) {
+    for (let x = 0; x < fb.w; x++) {
+      const v = fb.d[y * fb.w + x];
+      ctx.fillStyle = v < 0 ? '#0a0a0a'
+        : 'rgb(' + ((v >> 16) & 255) + ',' + ((v >> 8) & 255) + ',' + (v & 255) + ')';
+      ctx.fillRect(x * cell, y * cell, cell - gap, cell - gap);
+    }
+  }
+}
+
+function stripFB(f, text, truncate) {
+  const fb = makeFB(PANEL_W, f.stripH);
+  const s = truncate ? fitText(f, text, PANEL_W) : text;
+  drawText(fb, 0, f.ascent, s, LIST_COLOR, f);
+  return { fb: fb, shown: s, full: text };
+}
+
+function sampleBlock(f, label, text, truncate) {
+  const wrap = document.createElement('div');
+  const lab = document.createElement('div');
+  lab.className = 'sample-label';
+  const r = stripFB(f, text, truncate);
+  lab.textContent = label + '  →  "' + r.shown + '"'
+    + (r.shown !== r.full ? '  (truncated from "' + r.full + '")' : '')
+    + '   ' + textWidth(f, r.shown) + 'px';
+  if (r.shown !== r.full) lab.classList.add('warn');
+  wrap.appendChild(lab);
+
+  const strips = document.createElement('div');
+  strips.className = 'strips';
+  [1, ZOOM].forEach(function (cell) {
+    const box = document.createElement('div');
+    box.className = 'panel-wrap' + (cell === 1 ? ' one-to-one' : '');
+    const cv = document.createElement('canvas');
+    paint(cv, r.fb, cell);
+    box.appendChild(cv);
+    strips.appendChild(box);
+  });
+  wrap.appendChild(strips);
+  return wrap;
+}
+
+/* ============================================================
+   Page build
+   ============================================================ */
+const CURRENT = 'TomThumb';
+const RECOMMENDED = 'Picopixel';
+
+const NOTES = {
+  TomThumb: 'The font the firmware draws today. 3×5 digits, but 5/7/8/9 are mostly solid 3-wide ' +
+            'rows that differ by one interior pixel — that is what makes the numbers hard to read.',
+  Picopixel: 'Same 3×5 cell and same 4px digit pitch as TomThumb, so a line holds exactly as much, ' +
+             'but the digits differ by silhouette rather than by one pixel: 0 is an open ring, 8 an ' +
+             'hourglass, 6/9 have clear tails. Costs 1px more line pitch (7 vs 6) → 9 rows not 10.',
+  Org_01: '5×5 all-caps stencil — by far the boldest digits here. Two catches: 6px per digit means ' +
+          'the swim line no longer fits in 64px, and “1” is a bare 1px column.',
+  Tiny3x3a2pt7b: '3×3, the smallest that exists. Digits are ambiguous by construction ' +
+                 '(0 and 8 are near-identical); included only to bound the comparison.',
+  'GLCD 6×8 (built-in)': 'The chunky font already used for the big counters — unambiguous digits, ' +
+                         'and the honest legibility ceiling. But 6px fixed pitch = 10 chars per line ' +
+                         'and only 8 rows on the panel, so the list would have to be reformatted.'
+};
+
+let FONTS = [];
+
+function buildFonts() {
+  const list = [];
+  Object.keys(window.GFX_FONTS).forEach(function (name) {
+    list.push(annotate(buildFont(name, window.GFX_FONTS[name])));
+  });
+  list.push(annotate(buildGLCD()));
+  return list;
+}
+
+function sortFonts(mode) {
+  const by = {
+    height: function (a, b) { return a.height - b.height || a.name.localeCompare(b.name); },
+    chars:  function (a, b) { return b.charsPer64 - a.charsPer64 || a.name.localeCompare(b.name); },
+    name:   function (a, b) { return a.name.localeCompare(b.name); }
+  }[mode];
+  return FONTS.slice().sort(by);
+}
+
+function renderSummary(fonts) {
+  const tb = document.querySelector('#summary tbody');
+  tb.innerHTML = '';
+  const line1 = document.getElementById('line1').value;
+  fonts.forEach(function (f) {
+    const tr = document.createElement('tr');
+    if (f.name === CURRENT) tr.className = 'cur';
+    const w = textWidth(f, line1);
+    const cells = [
+      f.name + (f.name === CURRENT ? ' (current)' : ''),
+      f.height + 'px',
+      f.digitHeight + 'px',
+      f.yAdvance + 'px',
+      f.digitAdv + 'px',
+      String(f.charsPer64),
+      String(f.linesPer64),
+      w <= PANEL_W ? 'yes (' + w + 'px)' : 'no — ' + w + 'px, truncated'
+    ];
+    cells.forEach(function (c, i) {
+      const td = document.createElement('td');
+      td.textContent = c;
+      if (i > 0) td.className = 'num';
+      tr.appendChild(td);
+    });
+    tb.appendChild(tr);
+  });
+}
+
+function renderDigitsCompare(fonts) {
+  const host = document.getElementById('digitsCompare');
+  host.innerHTML = '';
+  fonts.forEach(function (f) {
+    const row = document.createElement('div');
+    row.style.marginBottom = '.55rem';
+    const lab = document.createElement('div');
+    lab.className = 'sample-label';
+    lab.textContent = f.name + (f.name === CURRENT ? '  (current)' : '');
+    row.appendChild(lab);
+    const fb = makeFB(PANEL_W, f.stripH);
+    drawText(fb, 0, f.ascent, '0123456789', LIST_COLOR, f);
+    const box = document.createElement('div');
+    box.className = 'panel-wrap';
+    box.style.display = 'inline-block';
+    const cv = document.createElement('canvas');
+    paint(cv, fb, ZOOM);
+    box.appendChild(cv);
+    row.appendChild(box);
+    host.appendChild(row);
+  });
+}
+
+function renderCards(fonts) {
+  const host = document.getElementById('cards');
+  host.innerHTML = '';
+  const line1 = document.getElementById('line1').value;
+  const line2 = document.getElementById('line2').value;
+
+  fonts.forEach(function (f) {
+    const card = document.createElement('div');
+    card.className = 'card' + (f.name === CURRENT ? ' current' : '');
+
+    const head = document.createElement('div');
+    head.className = 'card-head';
+
+    const left = document.createElement('div');
+    const h2 = document.createElement('h2');
+    h2.appendChild(document.createTextNode(f.name));
+    if (f.name === CURRENT) {
+      const t = document.createElement('span'); t.className = 'tag cur';
+      t.textContent = 'current'; h2.appendChild(t);
+    }
+    if (f.name === RECOMMENDED) {
+      const t = document.createElement('span'); t.className = 'tag pick';
+      t.textContent = 'suggested'; h2.appendChild(t);
+    }
+    const t2 = document.createElement('span'); t2.className = 'tag';
+    t2.textContent = f.kind === 'glcd' ? 'built-in' : 'GFXfont';
+    h2.appendChild(t2);
+    left.appendChild(h2);
+    const note = document.createElement('p');
+    note.className = 'muted';
+    note.style.margin = '.35rem 0 0'; note.style.maxWidth = '40rem';
+    note.textContent = NOTES[f.name] || '';
+    left.appendChild(note);
+    head.appendChild(left);
+
+    const tbl = document.createElement('table');
+    const rows = [
+      ['glyph height (max)', f.height + ' px'],
+      ['digit height', f.digitHeight + ' px'],
+      ['yAdvance (line pitch)', f.yAdvance + ' px'],
+      ['ascent / descent', f.ascent + ' / ' + f.descent + ' px'],
+      ['digit xAdvance', f.digitAdv + ' px'],
+      ['digit chars in 64px', String(f.charsPer64)],
+      ['list rows in 64px', String(f.linesPer64)]
+    ];
+    rows.forEach(function (kv) {
+      const tr = document.createElement('tr');
+      const th = document.createElement('th'); th.textContent = kv[0];
+      const td = document.createElement('td'); td.className = 'num'; td.textContent = kv[1];
+      tr.appendChild(th); tr.appendChild(td); tbl.appendChild(tr);
+    });
+    head.appendChild(tbl);
+    card.appendChild(head);
+
+    const samples = document.createElement('div');
+    samples.className = 'samples';
+    samples.appendChild(sampleBlock(f, 'digits', '0123456789', false));
+    samples.appendChild(sampleBlock(f, 'swim ', line1, true));
+    samples.appendChild(sampleBlock(f, 'rest ', line2, true));
+    card.appendChild(samples);
+
+    host.appendChild(card);
+  });
+}
+
+function redraw() {
+  ZOOM = Math.max(3, Math.min(14, parseInt(document.getElementById('zoom').value, 10) || 7));
+  GRID = document.getElementById('grid').checked;
+  const fonts = sortFonts(document.getElementById('sort').value);
+  renderSummary(fonts);
+  renderDigitsCompare(fonts);
+  renderCards(fonts);
+}
+
+FONTS = buildFonts();
+['sort', 'zoom', 'line1', 'line2', 'grid'].forEach(function (id) {
+  document.getElementById(id).addEventListener('input', redraw);
+});
+redraw();
+</script>
+</body>
+</html>

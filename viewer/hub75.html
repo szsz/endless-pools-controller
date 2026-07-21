@@ -258,9 +258,20 @@ function render(doc, mode) {
 
     const baselines = [H - 8, H - 2];
     let drawn = 0;
+    // same rule as the list: a set's swims appear once, not once per repetition
+    const first = arr[0] || {};
+    let bSetIdx = (typeof first.set_index === 'number') ? first.set_index : -1;
+    let bSetRep = (typeof first.set_rep === 'number') ? first.set_rep : -1;
     for (let i = 1; i < arr.length && drawn < 2; i++) {
       const o = arr[i];
       const p = o.pace100s || 0, dsec = o.durSec || 0, nt = o.note || '';
+
+      const si = (typeof o.set_index === 'number') ? o.set_index : -1;
+      const sr = (typeof o.set_rep === 'number') ? o.set_rep : -1;
+      if (si >= 0) {
+        if (si === bSetIdx && sr !== bSetRep) continue;
+        if (si !== bSetIdx) { bSetIdx = si; bSetRep = sr; }
+      }
       if (p > 0) {
         drawPaceLineGFX(baselines[drawn], Math.floor((dsec * 100) / p), p, nt, W, LIST_COLOR, TT);
       } else {
@@ -283,9 +294,12 @@ function render(doc, mode) {
   // ---- progress bar: one dashed segment per set, full panel width ----
   const setCount = doc.set_count || 0;
   const curSetIdx = (typeof doc.set_index === 'number') ? doc.set_index : -1;
+  const inSet = curSetIdx >= 0 && setCount > 0;
+  const barY = counterH + 1;
   let listStartY = counterH + 2;
-  if (setCount > 0) {
-    const barY = counterH + 1;
+
+  if (inSet) {
+    // inside a set: one segment per set, the one we're in shown blue
     const gap = setCount > 8 ? 1 : 2;
     for (let i = 0; i < setCount; i++) {
       let xs = Math.trunc((i * (W + gap)) / setCount);
@@ -295,14 +309,36 @@ function render(doc, mode) {
       for (let x = xs; x <= xe && x < W; x++) { px(x, barY, col); px(x, barY + 1, col); }
     }
     listStartY = barY + 4;
+  } else if (durSecCurrent > 0) {
+    // not in a set: progress through the current swim, orange easing to green
+    let done = durSecCurrent - remTop;
+    if (done < 0) done = 0;
+    if (done > durSecCurrent) done = durSecCurrent;
+    const filled = Math.trunc((done * W) / durSecCurrent);
+    const r = Math.trunc(255 + ((25  - 255) * done) / durSecCurrent);
+    const g = Math.trunc(140 + ((200 - 140) * done) / durSecCurrent);
+    const b = Math.trunc(0   + ((25  - 0)   * done) / durSecCurrent);
+    const col = c565(r, g, b);
+    for (let x = 0; x < filled && x < W; x++) { px(x, barY, col); px(x, barY + 1, col); }
+    listStartY = barY + 4;
   }
 
   const LH6 = 8, LHTT = 6;
   let y = listStartY;
   let shown = 0;
+  // A set is stored unrolled; the panel lists each of its swims only once, so
+  // any later repetition of a set we've already started is skipped.
+  let seenSetIdx = -1, seenSetRep = -1;
   for (let i = 0; i < arr.length && shown < 9; i++) {
     const o = arr[i];
     const pace = o.pace100s || 0, dur = o.durSec || 0, note = o.note || '';
+
+    const si = (typeof o.set_index === 'number') ? o.set_index : -1;
+    const sr = (typeof o.set_rep === 'number') ? o.set_rep : -1;
+    if (si >= 0) {
+      if (si === seenSetIdx && sr !== seenSetRep) continue;   // later repetition
+      if (si !== seenSetIdx) { seenSetIdx = si; seenSetRep = sr; }
+    }
 
     if (i === 0 && pace === 0) { y += 5; continue; }   // rest: counter only
 
@@ -324,8 +360,7 @@ function render(doc, mode) {
     }
 
     // right-edge marker: blue = current swim, green = belongs to a set
-    const itemSet = (typeof o.set_index === 'number') ? o.set_index : -1;
-    if (i === 0 || itemSet >= 0) {
+    if (i === 0 || si >= 0) {
       // built-in font draws downward from the cursor, TomThumb upward from its
       // baseline, so the marked rows differ per font.
       const markTop = (i === 0) ? rowStart : rowStart - 5;
