@@ -281,8 +281,9 @@ void printJSon(DynamicJsonDocument doc)
   // Large remaining meters + time for the current swim, that swim's name
   // underneath, and only the next two swims along the bottom.
   if (s_panel_mode == 1) {
-    const ColorRGB NEXT1{205, 133, 63};
-    const ColorRGB NEXT2{139, 69, 19};
+    // One colour for both upcoming lines: the brighter of the old pair. The
+    // darker shade was hard to read on the panel.
+    const ColorRGB NEXT{205, 133, 63};
     const uint8_t bigSize  = 2;
     const int bigCharW = 6 * (int)bigSize;   // 12 px per char
     const int bigLineH = 8 * (int)bigSize;   // 16 px per line
@@ -338,7 +339,7 @@ void printJSon(DynamicJsonDocument doc)
           line.remove(line.length() - 1);
           dma_display->getTextBounds(line.c_str(), 0, baselines[drawn], &bx, &by, &bw, &bh);
         }
-        dma_display->setTextColor(color565(drawn == 0 ? NEXT1 : NEXT2));
+        dma_display->setTextColor(color565(NEXT));
         dma_display->setCursor(0, baselines[drawn]);
         dma_display->print(line);
         drawn++;
@@ -390,9 +391,9 @@ void printJSon(DynamicJsonDocument doc)
 
   // Remaining list: up to first 5 items, each item uses two lines
   // start list under top margin
-  // Two brown shades for later items
-  const ColorRGB BROWN1{139, 69, 19};
-  const ColorRGB BROWN2{205, 133, 63};
+  // Single colour for the upcoming items — the brighter of the two shades that
+  // used to alternate, because the darker rows were hard to read.
+  const ColorRGB LIST_COLOR{205, 133, 63};
 
   if (!arr.isNull()) {
     size_t shown = 0;
@@ -441,7 +442,7 @@ void printJSon(DynamicJsonDocument doc)
         // Rest of items: smaller (TomThumb) and in one line
         dma_display->setFont(&TomThumb);
         dma_display->setTextSize(1);
-        dma_display->setTextColor(color565((shown % 2) ? BROWN2 : BROWN1));
+        dma_display->setTextColor(color565(LIST_COLOR));
 
         String line;
         if (pace > 0) {

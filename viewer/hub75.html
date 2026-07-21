@@ -89,7 +89,9 @@ const fb = new Int32Array(W * H);            // -1 = off, else 0xRRGGBB
 // The panel is RGB565, so quantise like color565() does.
 const c565 = (r, g, b) => ((r & 0xF8) << 16) | ((g & 0xFC) << 8) | (b & 0xF8);
 const DARK_ORANGE = c565(255,140,0), RED = c565(255,0,0), GREEN = c565(25,200,25);
-const BROWN1 = c565(139,69,19), BROWN2 = c565(205,133,63);
+// One colour for upcoming items (the brighter of the two shades that used to
+// alternate) — matches hub75.cpp.
+const LIST_COLOR = c565(205,133,63);
 
 function clearScreen() { fb.fill(-1); }
 function px(x, y, c) { x|=0; y|=0; if (x>=0 && x<W && y>=0 && y<H) fb[y*W + x] = c; }
@@ -184,7 +186,6 @@ function render(doc, mode) {
 
   /* ---------------- mode 1: big countdown ---------------- */
   if (mode === 1) {
-    const NEXT1 = c565(205,133,63), NEXT2 = c565(139,69,19);
     const bigSize = 2, bigCharW = 12, bigLineH = 16;
 
     const bigTop = pace100s > 0 ? (metersVal + 'm') : 'REST';
@@ -207,7 +208,7 @@ function render(doc, mode) {
         ? (Math.floor((dsec * 100) / p)) + 'M' + fmtMMSS(p) + ' ' + nt
         : 'rest ' + fmtMMSS(dsec) + ' ' + nt;
       line = fitGFX(line, TT, W);
-      printGFX(0, baselines[drawn], line, drawn === 0 ? NEXT1 : NEXT2, TT);
+      printGFX(0, baselines[drawn], line, LIST_COLOR, TT);
       drawn++;
     }
     return;
@@ -240,7 +241,7 @@ function render(doc, mode) {
         ? (dur > 0 ? Math.floor((dur * 100) / pace) : 0) + 'M' + fmtMMSS(pace) + ' ' + note
         : 'rest ' + fmtMMSS(dur) + ' ' + note;
       line = fitGFX(line, TT, W);
-      printGFX(0, y, line, (shown % 2) ? BROWN2 : BROWN1, TT);
+      printGFX(0, y, line, LIST_COLOR, TT);
       y += LHTT;
     }
     if (y >= H) break;
@@ -277,6 +278,10 @@ function buildMock() {
     steps.push({ pace100s: 80, durSec: 45, note: 'sprint', set_rep: rep, set_reps: 3 });
     steps.push({ pace100s: 0,  durSec: 20, note: 'easy',   set_rep: rep, set_reps: 3 });
   }
+  // A long section (>10 min) so the wider M:SS strings and big metre counts
+  // are exercised: 13:00 at 1:45/100m is ~742 m.
+  steps.push({ pace100s: 105, durSec: 780, note: 'long steady' });
+  steps.push({ pace100s: 0,   durSec: 660, note: 'long rest' });   // 11:00
   steps.push({ pace100s: 110, durSec: 90, note: 'cooldown' });
   steps.push({ pace100s: 0,   durSec: 60, note: 'stretch' });
   return steps;
