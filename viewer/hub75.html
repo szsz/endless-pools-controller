@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HUB75 panel emulator (64×64)</title>
+<style>
+  :root { --bg:#15171c; --fg:#e8e8ea; --muted:#9aa0a8; --accent:#0077cc; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; padding:1rem; background:var(--bg); color:var(--fg);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+    display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;
+  }
+  h1 { font-size:1.1rem; margin:0 0 .75rem; }
+  .panel-wrap { background:#000; padding:10px; border-radius:10px; box-shadow:0 0 0 1px #333, 0 8px 30px #000a; }
+  canvas { display:block; image-rendering:pixelated; }
+  .controls { min-width:300px; flex:1 1 320px; max-width:520px; }
+  fieldset { border:1px solid #333; border-radius:8px; margin:0 0 .85rem; padding:.7rem .85rem; }
+  legend { color:var(--muted); font-size:.8rem; padding:0 .35rem; }
+  label { display:flex; align-items:center; gap:.5rem; margin:.35rem 0; font-size:.9rem; }
+  select, input[type=number] { background:#20242b; color:var(--fg); border:1px solid #3a3f47; border-radius:6px; padding:.35rem .5rem; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:6px; padding:.5rem .9rem; font-weight:700; cursor:pointer; }
+  button.sec { background:#333a44; }
+  .row { display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; }
+  .muted { color:var(--muted); font-size:.82rem; line-height:1.45; }
+  table { width:100%; border-collapse:collapse; font-size:.8rem; margin-top:.4rem; }
+  th,td { text-align:left; padding:2px 6px; border-bottom:1px solid #2a2f36; }
+  th { color:var(--muted); font-weight:600; }
+  tr.cur td { color:#4ade80; font-weight:700; }
+  tr.set td:first-child { border-left:3px solid var(--accent); }
+  code { background:#20242b; padding:.1rem .3rem; border-radius:4px; }
+</style>
+</head>
+<body>
+
+<div>
+  <h1>HUB75 panel emulator — 64×64</h1>
+  <div class="panel-wrap"><canvas id="panel" width="576" height="576"></canvas></div>
+  <p class="muted" style="max-width:576px;margin-top:.6rem;">
+    Pixel-accurate: uses the real Adafruit GFX fonts (built-in 6×8 + TomThumb) and mirrors
+    <code>printJSon()</code> in <code>hub75.cpp</code>, including 5/6/5 colour quantisation.
+    Runs entirely offline on mock data — no device needed.
+  </p>
+</div>
+
+<div class="controls">
+  <fieldset>
+    <legend>Panel mode</legend>
+    <label><input type="radio" name="mode" value="0" checked> Classic — counters + upcoming list</label>
+    <label><input type="radio" name="mode" value="1"> Big — large countdown + next two</label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Playback (mock workout)</legend>
+    <div class="row">
+      <button id="playBtn">⏸ Pause</button>
+      <button id="stepBtn" class="sec">⏭ Next step</button>
+      <button id="resetBtn" class="sec">↺ Reset</button>
+    </div>
+    <label>Speed
+      <select id="speed">
+        <option value="1">1×</option>
+        <option value="4" selected>4×</option>
+        <option value="10">10×</option>
+        <option value="60">60×</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="pausedChk"> Simulate <em>paused</em> (rest turns red)</label>
+    <label>Zoom <input type="number" id="zoom" min="2" max="16" value="9" style="width:5rem"></label>
+  </fieldset>
+
+  <fieldset>
+    <legend>Mock workout</legend>
+    <div class="muted">Includes a named set repeated ×3, so set names and the next-two lines are exercised.</div>
+    <table id="steps"><thead><tr><th>#</th><th>Pace</th><th>Time</th><th>Dist</th><th>Note</th></tr></thead><tbody></tbody></table>
+  </fieldset>
+</div>
+
+<script src="hub75-fonts.js"></script>
+<script>
+/* ============================================================
+   Minimal Adafruit_GFX-compatible renderer on a 64x64 framebuffer.
+   Mirrors hub75.cpp so what you see here is what the panel draws.
+   ============================================================ */
+const W = 64, H = 64;
+const fb = new Int32Array(W * H);            // -1 = off, else 0xRRGGBB
+
+// The panel is RGB565, so quantise like color565() does.
+const c565 = (r, g, b) => ((r & 0xF8) << 16) | ((g & 0xFC) << 8) | (b & 0xF8);
+const DARK_ORANGE = c565(255,140,0), RED = c565(255,0,0), GREEN = c565(25,200,25);
+const BROWN1 = c565(139,69,19), BROWN2 = c565(205,133,63);
+
+function clearScreen() { fb.fill(-1); }
+function px(x, y, c) { x|=0; y|=0; if (x>=0 && x<W && y>=0 && y<H) fb[y*W + x] = c; }
+
+/* built-in 6x8 font: setCursor(x,y) puts the glyph's TOP-LEFT at (x,y) */
+function drawCharBuiltin(x, y, ch, color, size) {
+  const c = ch.charCodeAt(0) & 0xFF;
+  for (let i = 0; i < 5; i++) {
+    let line = window.GLCD_FONT[c*5 + i];
+    for (let j = 0; j < 8; j++) {
+      if (line & (1 << j)) {
+        if (size === 1) px(x+i, y+j, color);
+        else for (let a=0;a<size;a++) for (let b=0;b<size;b++) px(x+i*size+a, y+j*size+b, color);
+      }
+    }
+  }
+}
+function printBuiltin(x, y, str, color, size) {
+  let cx = x;
+  for (const ch of str) { drawCharBuiltin(cx, y, ch, color, size); cx += 6*size; }
+}
+const widthBuiltin = (str, size) => str.length * 6 * size;
+
+/* GFXfont (TomThumb): setCursor(x,y) puts the glyph on the BASELINE y */
+function drawCharGFX(x, y, ch, color, font) {
+  const c = ch.charCodeAt(0);
+  if (c < font.first || c > font.last) return 0;
+  const [off, gw, gh, xAdv, xOff, yOff] = font.glyphs[c - font.first];
+  let bo = off, bits = 0, bit = 0;
+  for (let yy = 0; yy < gh; yy++) {
+    for (let xx = 0; xx < gw; xx++) {
+      if ((bit++ & 7) === 0) bits = font.bitmaps[bo++];
+      if (bits & 0x80) px(x + xOff + xx, y + yOff + yy, color);
+      bits = (bits << 1) & 0xFF;
+    }
+  }
+  return xAdv;
+}
+function printGFX(x, y, str, color, font) {
+  let cx = x;
+  for (const ch of str) cx += drawCharGFX(cx, y, ch, color, font);
+}
+function widthGFX(str, font) {
+  let w = 0;
+  for (const ch of str) {
+    const c = ch.charCodeAt(0);
+    if (c >= font.first && c <= font.last) w += font.glyphs[c - font.first][3];
+  }
+  return w;
+}
+/* mirrors the `while (bw > PANEL_WIDTH) remove last char` truncation in hub75.cpp */
+function fitGFX(str, font, maxW) {
+  let s = str;
+  while (widthGFX(s, font) > maxW && s.length > 1) s = s.slice(0, -1);
+  return s;
+}
+
+const fmtMMSS = (secs) => {
+  if (secs < 0) secs = 0;
+  const m = Math.floor(secs / 60), s = secs % 60;
+  return m + ':' + String(s).padStart(2, '0');
+};
+
+/* ============================================================
+   Renderers — 1:1 with hub75.cpp printJSon()
+   ============================================================ */
+function render(doc, mode) {
+  const TT = window.TOMTHUMB;
+  clearScreen();
+
+  const paused = !!doc.paused;
+  const arr = doc.remaining_swims || [];
+  let curNote = doc.current_step_note || '';
+
+  const elapsedSec = Math.floor((doc.elapsed_ms || 0) / 1000);
+  let durSecCurrent = 0, pace100s = 0;
+  if (arr.length > 0) {
+    durSecCurrent = arr[0].durSec || 0;
+    pace100s = arr[0].pace100s || 0;
+    if (!curNote) curNote = arr[0].note || '';
+  }
+  if (!curNote) curNote = 'Step';
+
+  let remTop = durSecCurrent - elapsedSec;
+  if (remTop < 0) remTop = 0;
+  const timeStr = fmtMMSS(remTop);
+
+  let metersVal = pace100s > 0 ? Math.floor((remTop * 100) / pace100s) : 0;
+  let metersStr = metersVal === 0 ? '' : metersVal + 'm';
+
+  const firstColor = pace100s > 0 ? GREEN : (paused ? RED : DARK_ORANGE);
+
+  /* ---------------- mode 1: big countdown ---------------- */
+  if (mode === 1) {
+    const NEXT1 = c565(205,133,63), NEXT2 = c565(139,69,19);
+    const bigSize = 2, bigCharW = 12, bigLineH = 16;
+
+    const bigTop = pace100s > 0 ? (metersVal + 'm') : 'REST';
+    let wTop = bigTop.length * bigCharW; if (wTop > W) wTop = W;
+    printBuiltin(Math.trunc((W - wTop) / 2), 0, bigTop, firstColor, bigSize);
+
+    const wTime = timeStr.length * bigCharW;
+    printBuiltin(Math.trunc((W - wTime) / 2), bigLineH, timeStr, firstColor, bigSize);
+
+    let name = curNote;
+    while (name.length * 6 > W && name.length > 1) name = name.slice(0, -1);
+    printBuiltin(Math.trunc((W - name.length * 6) / 2), 2*bigLineH + 2, name, firstColor, 1);
+
+    const baselines = [H - 8, H - 2];
+    let drawn = 0;
+    for (let i = 1; i < arr.length && drawn < 2; i++) {
+      const o = arr[i];
+      const p = o.pace100s || 0, dsec = o.durSec || 0, nt = o.note || '';
+      let line = p > 0
+        ? (Math.floor((dsec * 100) / p)) + 'M' + fmtMMSS(p) + ' ' + nt
+        : 'rest ' + fmtMMSS(dsec) + ' ' + nt;
+      line = fitGFX(line, TT, W);
+      printGFX(0, baselines[drawn], line, drawn === 0 ? NEXT1 : NEXT2, TT);
+      drawn++;
+    }
+    return;
+  }
+
+  /* ---------------- mode 0: classic list ---------------- */
+  const charW = 6, counterH = 8;
+  const timeW = timeStr.length * charW, metersW = metersStr.length * charW;
+  const gapW = metersVal === 0 ? 0 : charW * 2;
+  const combinedW = timeW + gapW + metersW;
+  const x0 = Math.trunc((W - combinedW) / 2);
+  printBuiltin(x0, 0, timeStr, firstColor, 1);
+  printBuiltin(x0 + timeW + gapW, 0, metersStr, firstColor, 1);
+
+  const LH6 = 8, LHTT = 6;
+  let y = counterH + 2;
+  let shown = 0;
+  for (let i = 0; i < arr.length && shown < 9; i++) {
+    const o = arr[i];
+    const pace = o.pace100s || 0, dur = o.durSec || 0, note = o.note || '';
+
+    if (i === 0 && pace === 0) { y += 5; continue; }   // rest: counter only
+
+    if (i === 0) {
+      const meters = dur > 0 ? Math.floor((dur * 100) / pace) : 0;
+      printBuiltin(0, y, meters + 'm ' + fmtMMSS(pace), firstColor, 1); y += LH6;
+      printBuiltin(0, y, note, firstColor, 1);         y += LH6; y += 5;
+    } else {
+      let line = pace > 0
+        ? (dur > 0 ? Math.floor((dur * 100) / pace) : 0) + 'M' + fmtMMSS(pace) + ' ' + note
+        : 'rest ' + fmtMMSS(dur) + ' ' + note;
+      line = fitGFX(line, TT, W);
+      printGFX(0, y, line, (shown % 2) ? BROWN2 : BROWN1, TT);
+      y += LHTT;
+    }
+    if (y >= H) break;
+    shown++;
+  }
+}
+
+/* ============================================================
+   Canvas paint — chunky LEDs on black
+   ============================================================ */
+const canvas = document.getElementById('panel');
+const ctx = canvas.getContext('2d');
+let ZOOM = 9;
+function paint() {
+  const gap = ZOOM >= 6 ? 1 : 0, cell = ZOOM;
+  canvas.width = W * cell; canvas.height = H * cell;
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const v = fb[y*W + x];
+      ctx.fillStyle = v < 0 ? '#0a0a0a' : `rgb(${(v>>16)&255},${(v>>8)&255},${v&255})`;
+      ctx.fillRect(x*cell, y*cell, cell - gap, cell - gap);
+    }
+  }
+}
+
+/* ============================================================
+   Mock workout — a warmup, a named set repeated x3, a cooldown.
+   Shape matches the firmware's /events "status" payload.
+   ============================================================ */
+function buildMock() {
+  const steps = [{ pace100s: 95, durSec: 120, note: 'warmup' }];
+  for (let rep = 1; rep <= 3; rep++) {
+    steps.push({ pace100s: 80, durSec: 45, note: 'sprint', set_rep: rep, set_reps: 3 });
+    steps.push({ pace100s: 0,  durSec: 20, note: 'easy',   set_rep: rep, set_reps: 3 });
+  }
+  steps.push({ pace100s: 110, durSec: 90, note: 'cooldown' });
+  steps.push({ pace100s: 0,   durSec: 60, note: 'stretch' });
+  return steps;
+}
+const STEPS = buildMock();
+let idx = 0, elapsedMs = 0, playing = true;
+
+function statusDoc() {
+  const cur = STEPS[idx] || {};
+  const d = {
+    running: true,
+    paused: document.getElementById('pausedChk').checked,
+    elapsed_ms: elapsedMs,
+    current_step_note: cur.note || '',
+    remaining_swims: STEPS.slice(idx).map(s => ({
+      pace100s: s.pace100s, durSec: s.durSec, note: s.note,
+      ...(s.set_reps ? { set_rep: s.set_rep, set_reps: s.set_reps } : {})
+    }))
+  };
+  if (cur.set_reps) { d.set_rep = cur.set_rep; d.set_reps = cur.set_reps; }
+  return d;
+}
+
+function renderStepTable() {
+  const tb = document.querySelector('#steps tbody');
+  tb.innerHTML = '';
+  STEPS.forEach((s, i) => {
+    const tr = document.createElement('tr');
+    if (i === idx) tr.className = 'cur';
+    else if (s.set_reps) tr.className = 'set';
+    const dist = s.pace100s ? Math.floor(s.durSec * 100 / s.pace100s) + ' m' : '—';
+    const cells = [
+      s.set_reps ? `${i+1} (set ${s.set_rep}/${s.set_reps})` : String(i+1),
+      s.pace100s ? fmtMMSS(s.pace100s) : 'rest',
+      fmtMMSS(s.durSec), dist, s.note || ''
+    ];
+    for (const c of cells) { const td = document.createElement('td'); td.textContent = c; tr.appendChild(td); }
+    tb.appendChild(tr);
+  });
+}
+
+const currentMode = () => parseInt(document.querySelector('input[name=mode]:checked').value, 10);
+
+function frame(dtMs) {
+  if (playing && !document.getElementById('pausedChk').checked) {
+    elapsedMs += dtMs * parseInt(document.getElementById('speed').value, 10);
+    const cur = STEPS[idx];
+    if (cur && elapsedMs >= cur.durSec * 1000) { elapsedMs = 0; idx++; renderStepTable(); }
+    if (idx >= STEPS.length) { idx = 0; elapsedMs = 0; renderStepTable(); }
+  }
+  render(statusDoc(), currentMode());
+  paint();
+}
+
+let last = performance.now();
+function loop(now) { const dt = now - last; last = now; frame(dt); requestAnimationFrame(loop); }
+
+document.getElementById('playBtn').addEventListener('click', (e) => {
+  playing = !playing; e.target.textContent = playing ? '⏸ Pause' : '▶ Play';
+});
+document.getElementById('stepBtn').addEventListener('click', () => {
+  idx = (idx + 1) % STEPS.length; elapsedMs = 0; renderStepTable();
+});
+document.getElementById('resetBtn').addEventListener('click', () => {
+  idx = 0; elapsedMs = 0; renderStepTable();
+});
+document.getElementById('zoom').addEventListener('input', (e) => {
+  ZOOM = Math.max(2, Math.min(16, parseInt(e.target.value, 10) || 9));
+});
+document.querySelectorAll('input[name=mode]').forEach(r => r.addEventListener('change', () => frame(0)));
+
+renderStepTable();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
