@@ -193,6 +193,78 @@ void setupHUB75() {
 
 
 
+// Compact pace notation: instead of "1:30" the minutes become a single glyph of
+// horizontal bars (1 = top, 2 = top+middle, 3 = top+middle+bottom) followed by
+// the two seconds digits, saving a character of width on the panel.
+// `top` is the glyph's top row; returns the x advance (bar width + 1px gap).
+static int drawPaceMinuteGlyph(int x, int top, int mins, int gw, int gh, uint16_t color)
+{
+  auto bar = [&](int yy) {
+    for (int i = 0; i < gw; ++i) dma_display->drawPixel(x + i, yy, color);
+  };
+  bar(top);
+  if (mins >= 2) bar(top + (gh - 1) / 2);
+  if (mins >= 3) bar(top + gh - 1);
+  return gw + 1;
+}
+
+// Width of a string in whatever font is currently selected.
+static uint16_t textWidth(const String &s)
+{
+  int16_t bx, by; uint16_t bw, bh;
+  dma_display->getTextBounds(s.c_str(), 0, 0, &bx, &by, &bw, &bh);
+  return bw;
+}
+
+static String fmtMMSSs(long secs)
+{
+  if (secs < 0) secs = 0;
+  char buf[12];
+  snprintf(buf, sizeof buf, "%ld:%02ld", secs / 60, secs % 60);
+  return String(buf);
+}
+
+// One upcoming-swim line in TomThumb: "<meters>m <paceglyph><SS> <note>", with
+// the note truncated to fit maxW. Falls back to plain M:SS when the pace is
+// outside the 1..3 minute range the glyphs can express.
+static void drawTomThumbPaceLine(int baseline, long meters, long pace,
+                                 const String &note, int maxW, uint16_t color)
+{
+  dma_display->setTextColor(color);
+  const int mins = (int)(pace / 60), secs = (int)(pace % 60);
+  const bool useGlyph = (mins >= 1 && mins <= 3);
+
+  String pre = String(meters) + "m ";
+  char sb[4]; snprintf(sb, sizeof sb, "%02d", secs);
+  const String secsStr(sb);
+  String tail = String(" ") + note;
+
+  const int glyphAdv = 4;   // 3px of bars + 1px gap
+  const int fixed = textWidth(pre) + (useGlyph ? (glyphAdv + textWidth(secsStr))
+                                               : textWidth(fmtMMSSs(pace)));
+  while (fixed + (int)textWidth(tail) > maxW && tail.length() > 0) {
+    tail.remove(tail.length() - 1);
+  }
+
+  int cx = 0;
+  dma_display->setCursor(cx, baseline);
+  dma_display->print(pre);
+  cx = dma_display->getCursorX();
+
+  if (useGlyph) {
+    drawPaceMinuteGlyph(cx, baseline - 5, mins, 3, 5, color);  // TomThumb glyphs are 5px tall
+    cx += glyphAdv;
+    dma_display->setCursor(cx, baseline);
+    dma_display->print(secsStr);
+  } else {
+    dma_display->setCursor(cx, baseline);
+    dma_display->print(fmtMMSSs(pace));
+  }
+  cx = dma_display->getCursorX();
+  dma_display->setCursor(cx, baseline);
+  dma_display->print(tail);
+}
+
 void printJSon(DynamicJsonDocument doc)
 {
   if (!dma_display || !s_display_on) return;
@@ -328,7 +400,7 @@ void printJSon(DynamicJsonDocument doc)
         String line;
         if (p > 0) {
           long m = (dsec > 0) ? (long)((dsec * 100) / p) : 0;
-          line = String(m) + "M" + fmtMMSS(p) + " " + String(nt);
+          line = String(m) + "m " + fmtMMSS(p) + " " + String(nt);
         } else {
           line = String("rest ") + fmtMMSS(dsec) + " " + String(nt);
         }
@@ -377,8 +449,32 @@ void printJSon(DynamicJsonDocument doc)
   dma_display->print(metersStr);
   
 
-  // Determine where list should start
-  int listStartY = (counterH) + 2;
+  // ---- progress bar: one dashed segment per set, spanning the full width ----
+  // Sits between the counters and the list. The segment for the set we are
+  // currently in is blue, the rest orange.
+  const ColorRGB BAR_IDLE{255, 140, 0};    // orange
+  const ColorRGB MARK_CURRENT{40, 120, 255}; // blue
+  const ColorRGB MARK_SET{25, 200, 25};      // green
+  const int setCount = doc["set_count"] | 0;
+  const int curSetIdx = doc["set_index"].is<int>() ? doc["set_index"].as<int>() : -1;
+
+  int listStartY = counterH + 2;
+  if (setCount > 0) {
+    const int barY = counterH + 1;           // 2px tall bar just under the counters
+    const int gap = (setCount > 8) ? 1 : 2;  // tighter spacing once there are many sets
+    for (int i = 0; i < setCount; ++i) {
+      // Spread across the whole panel: the last segment always ends at x = 63.
+      int xs = (i * (PANEL_WIDTH + gap)) / setCount;
+      int xe = ((i + 1) * (PANEL_WIDTH + gap)) / setCount - gap - 1;
+      if (xe < xs) xe = xs;                  // keep at least one pixel per set
+      uint16_t c = color565(i == curSetIdx ? MARK_CURRENT : BAR_IDLE);
+      for (int x = xs; x <= xe && x < PANEL_WIDTH; ++x) {
+        dma_display->drawPixel(x, barY, c);
+        dma_display->drawPixel(x, barY + 1, c);
+      }
+    }
+    listStartY = barY + 2 + 2;               // list clears the bar
+  }
 
   // Prepare fonts: built-in for first item; TomThumb will be used for the rest (smaller)
   dma_display->setFont(nullptr);
@@ -409,6 +505,8 @@ void printJSon(DynamicJsonDocument doc)
         continue;
       }
 
+      const int rowStart = y;   // remembered so the right-edge marker can span this item
+
       if (i == 0) {
         // First visible item (swim): color matches counters; two lines
         dma_display->setFont(nullptr);
@@ -416,7 +514,6 @@ void printJSon(DynamicJsonDocument doc)
         dma_display->setTextColor(color565(firstColor));
 
         long meters = (dur > 0) ? (long)((dur * 100) / pace) : 0;
-        String line1 = String(meters) + "m " + fmtMMSS(pace);
         String line2 = String(note);
 
         int16_t bx, by; uint16_t bw, bh;
@@ -425,8 +522,23 @@ void printJSon(DynamicJsonDocument doc)
           line1.remove(line1.length() - 1);
           dma_display->getTextBounds(line1.c_str(), 0, y, &bx, &by, &bw, &bh);
         }*/
+        // "<meters>m " then the compact pace glyph + seconds (built-in font is
+        // 6x8, so the glyph is 5 wide / 7 tall and advances 6).
+        String pre1 = String(meters) + "m ";
+        const int pmins = (int)(pace / 60), psecs = (int)(pace % 60);
         dma_display->setCursor(0, y);
-        dma_display->print(line1);
+        dma_display->print(pre1);
+        int cx1 = dma_display->getCursorX();
+        if (pmins >= 1 && pmins <= 3) {
+          drawPaceMinuteGlyph(cx1, y, pmins, 5, 7, color565(firstColor));
+          cx1 += 6;
+          char sb1[4]; snprintf(sb1, sizeof sb1, "%02d", psecs);
+          dma_display->setCursor(cx1, y);
+          dma_display->print(sb1);
+        } else {
+          dma_display->setCursor(cx1, y);
+          dma_display->print(fmtMMSSs(pace));
+        }
         y += LH6;
 
        /*dma_display->getTextBounds(line2.c_str(), 0, y, &bx, &by, &bw, &bh);
@@ -444,23 +556,39 @@ void printJSon(DynamicJsonDocument doc)
         dma_display->setTextSize(1);
         dma_display->setTextColor(color565(LIST_COLOR));
 
-        String line;
+        // Leave the last column free for the set / current-swim marker.
+        const int textW = PANEL_WIDTH - 2;
         if (pace > 0) {
           long meters = (dur > 0) ? (long)((dur * 100) / pace) : 0;
-          line = String(meters) + "M" + fmtMMSS(pace) + " " + String(note);
+          drawTomThumbPaceLine(y, meters, pace, String(note), textW, color565(LIST_COLOR));
         } else {
-          line = String("rest ") + fmtMMSS(dur) + " " + String(note);
-        }
-
-        int16_t bx, by; uint16_t bw, bh;
-        dma_display->getTextBounds(line.c_str(), 0, y, &bx, &by, &bw, &bh);
-        while (bw > PANEL_WIDTH && line.length() > 1) {
-          line.remove(line.length() - 1);
+          // A rest shows its duration, not a pace, so it keeps plain M:SS.
+          String line = String("rest ") + fmtMMSS(dur) + " " + String(note);
+          int16_t bx, by; uint16_t bw, bh;
           dma_display->getTextBounds(line.c_str(), 0, y, &bx, &by, &bw, &bh);
+          while (bw > textW && line.length() > 1) {
+            line.remove(line.length() - 1);
+            dma_display->getTextBounds(line.c_str(), 0, y, &bx, &by, &bw, &bh);
+          }
+          dma_display->setCursor(0, y);
+          dma_display->print(line);
         }
-        dma_display->setCursor(0, y);
-        dma_display->print(line);
         y += (LHTT);
+      }
+
+      // Right-edge marker: blue beside the current swim, green beside any step
+      // that belongs to a set. The built-in font draws downward from the cursor
+      // while TomThumb draws upward from its baseline, so the marked rows are
+      // computed per font or the mark ends up offset from its text.
+      const int itemSet = obj["set_index"].is<int>() ? obj["set_index"].as<int>() : -1;
+      if (i == 0 || itemSet >= 0) {
+        int markTop, markBot;                 // [markTop, markBot)
+        if (i == 0) { markTop = rowStart; markBot = rowStart + 2 * LH6; }
+        else        { markTop = rowStart - 5; markBot = rowStart + 1; }
+        uint16_t mc = color565(i == 0 ? MARK_CURRENT : MARK_SET);
+        for (int yy = markTop; yy < markBot && yy < PANEL_HEIGHT; ++yy) {
+          if (yy >= 0) dma_display->drawPixel(PANEL_WIDTH - 1, yy, mc);
+        }
       }
 
       if (y >= PANEL_HEIGHT) break;
