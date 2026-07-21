@@ -343,6 +343,60 @@ Notes
 - The Python scripts only use the standard library.
 - For OTA, ensure the Arduino ESP32 core is installed; the script auto-detects `espota.py` on Windows, Linux (`~/.arduino15`), and macOS (`~/Library/Arduino15`).
 
+### Linux one-command initial flash (recommended on Linux)
+
+`scripts/flash-linux.sh` performs the whole first-time USB flash end to end. It:
+1. checks for `arduino-cli`, installs the `esp32` core and the required libraries
+   (ArduinoJson, ESP32Async **ESP Async WebServer** + **Async TCP**, Adafruit GFX,
+   ESP32 HUB75 DMA) if they're missing,
+2. creates a local `otapassword.h` if you don't already have one — the sketch
+   `#include`s it, so the build **fails without it** (the file stays git-ignored),
+3. auto-detects the ESP32-S3 serial port,
+4. compiles with the custom-partition FQBN and writes **bootloader + partition
+   table (from `partitions.csv`) + otadata + application**, then reads the table
+   back to verify it matches `partitions.csv`, and
+5. builds a LittleFS image from `data/` and flashes it, so the web UI,
+   `data/workouts/*.json` and `wifi_config.json` all land on the device over USB —
+   no network or PSK needed.
+
+> Why the partition table matters: `partitions.csv` defines the two 3 MB app slots
+> (`ota_0`/`ota_1`). A board flashed without it has no second slot, so a later OTA
+> fails with **"Could Not Activate The Firmware"**. Use `--erase` to clear a stale one.
+
+One-time prerequisite — install Arduino CLI:
+```
+curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | sh
+# add the install dir (e.g. ~/.local/bin or ./bin) to your PATH
+```
+
+Then, from the repo root:
+```
+./scripts/flash-linux.sh                         # autodetect port; firmware + partitions + data/
+./scripts/flash-linux.sh --port /dev/ttyACM0     # choose the port explicitly
+./scripts/flash-linux.sh --ota-password 'secret' # set the OTA password on first build
+./scripts/flash-linux.sh --build-only            # compile only, don't upload
+./scripts/flash-linux.sh --no-data               # firmware only, keep the device's filesystem
+./scripts/flash-linux.sh --erase                 # full chip erase first (also wipes LittleFS)
+./scripts/flash-linux.sh --no-verify             # skip the partition-table read-back
+./scripts/flash-linux.sh -y                      # non-interactive (skip the confirm prompt)
+```
+
+Note: by default this **replaces the device's LittleFS**, so any workouts created in
+the web UI and not saved to `data/workouts/` are overwritten. Use `--no-data` to keep them.
+
+Notes:
+- The board enumerates as `/dev/ttyUSB*` (USB-UART bridge) or `/dev/ttyACM*` (ESP32-S3
+  native USB, vendor id `303a`). The script prefers known USB-serial chips automatically.
+- Permission error on the port? Add yourself to the `dialout` group, then log out/in:
+  ```
+  sudo usermod -aG dialout "$USER"
+  ```
+- `otapassword.h` is never committed; see [OTA Updates](#over-the-air-ota-updates) for its format.
+- After this first USB flash, use OTA for future updates:
+  ```
+  python3 scripts/ota_upload.py --target swimmachine.local --build
+  ```
+
 Initial flash over serial from Bash (sets custom partitions)
 - Linux (example):
 ```
@@ -397,6 +451,9 @@ Option C – Arduino CLI (USB serial)
   - arduino-cli compile -b "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=8M,PartitionScheme=custom,PSRAM=opi" --build-path build\arduino --export-binaries .
 - Upload over serial (replace COM5 with your port):
   - arduino-cli upload -p COM5 -b "esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,FlashSize=8M,PartitionScheme=custom,PSRAM=opi" --input-dir build\arduino
+
+Option D – Linux one-command (recommended on Linux)
+- `./scripts/flash-linux.sh` — checks arduino-cli/esp32 core, ensures `otapassword.h`, auto-detects the port, compiles with the custom partition FQBN, and uploads. See [Linux one-command initial flash](#linux-one-command-initial-flash-recommended-on-linux) above for options.
 
 Subsequent OTA updates (after first serial flash)
 
