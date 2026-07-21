@@ -33,6 +33,11 @@ namespace SwimMachine
   void setPeerIP(IPAddress ip);
   bool isMachineFound();
 
+  // Dry run: build and report packets as usual but never transmit them, so a
+  // workout can be exercised without driving the actual swim machine.
+  void setDryRun(bool on);
+  bool isDryRun();
+
   SwimStatus getStatus(); // query live state
 
 } // namespace SwimMachine

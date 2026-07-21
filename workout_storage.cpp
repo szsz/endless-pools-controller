@@ -21,22 +21,41 @@ static String path_for(const String& id) {
 
 
 
+// Serialize a single swim as {speed,dur,note} (the format the UI has always used).
+static void write_swim(JsonObject o, const SwimStep &s) {
+  o["speed"] = s.pace100s;   // pace100s -> "speed"
+  o["dur"]   = s.durSec;
+  o["note"]  = s.note;
+}
+
 String WorkoutStorage::to_json(const Workout &w) {
   // Use heap allocation to avoid stack overflow; size based on content
-  size_t cap = 512 + (w.steps.size() * 96);
-  for (const auto &s : w.steps) cap += s.note.length();
+  size_t swimCount = 0;
+  for (const auto &it : w.items) swimCount += it.isSet ? it.swims.size() : 1;
+  size_t cap = 512 + (swimCount * 96);
+  for (const auto &it : w.items) {
+    cap += it.note.length();
+    if (it.isSet) { for (const auto &s : it.swims) cap += s.note.length(); }
+    else            cap += it.swim.note.length();
+  }
   if (cap < 1024) cap = 1024;
   if (cap > 8192) cap = 8192;
   DynamicJsonDocument doc(cap);
 
-  doc["id"] = String(w.id);        // store as string
+  doc["id"] = w.id;                // string id, preserved verbatim
   doc["title"] = w.name;           // use "title" not "name"
   JsonArray arr = doc.createNestedArray("swims");   // "swims" key
-  for (auto &s : w.steps) {
+  for (const auto &it : w.items) {
     JsonObject o = arr.createNestedObject();
-    o["speed"] = s.pace100s; // rename field from pace100s -> speed
-    o["dur"] = s.durSec;
-    o["note"] = s.note;
+    if (it.isSet) {
+      o["type"]   = "set";
+      o["repeat"] = it.repeat;
+      o["note"]   = it.note;
+      JsonArray sub = o.createNestedArray("swims");
+      for (const auto &s : it.swims) write_swim(sub.createNestedObject(), s);
+    } else {
+      write_swim(o, it.swim);      // plain swim: unchanged {speed,dur,note}
+    }
   }
   String out;
   serializeJson(doc, out);
@@ -55,21 +74,66 @@ bool WorkoutStorage::from_json(const uint8_t *data, size_t len, Workout &w) {
     Serial.printf("JSON parse error: %s\n", err.c_str());
     return false;
   }
-  // convert string id to uint32_t using atol or strtoull
-  const char* strid = doc["id"] | "";
-  w.id = strtoull(strid, nullptr, 10);
-
+  w.id   = String(doc["id"] | "");            // preserve string id verbatim
   w.name = String(doc["title"] | "Unnamed");  // use "title"
 
-  w.steps.clear();
-  for (auto elem : doc["swims"].as<JsonArray>()) {  // use "swims"
+  auto read_swim = [](JsonObjectConst o) {
     SwimStep s;
-    s.pace100s = elem["speed"] | 0U;              // rename speed->pace100s
-    s.durSec = elem["dur"] | 0UL;
-    s.note = String(elem["note"] | "");
-    w.steps.push_back(s);
+    s.pace100s = o["speed"] | 0U;             // "speed" -> pace100s
+    s.durSec   = o["dur"]   | 0UL;
+    s.note     = String(o["note"] | "");
+    return s;
+  };
+
+  w.items.clear();
+  // Each element of "swims" is either a plain swim {speed,dur,note} (legacy &
+  // current) or a set {type:"set", repeat, note, swims:[...]}. Elements without
+  // type:"set" parse as plain swims, so old workout files still load unchanged.
+  for (JsonObjectConst elem : doc["swims"].as<JsonArrayConst>()) {
+    const char* type = elem["type"] | "";
+    WorkoutItem it;
+    if (strcmp(type, "set") == 0) {
+      it.isSet = true;
+      uint32_t rep = elem["repeat"] | 1U;
+      if (rep < 1)   rep = 1;
+      if (rep > 100) rep = 100;               // sanity clamp
+      it.repeat = (uint16_t)rep;
+      it.note = String(elem["note"] | "");
+      for (JsonObjectConst s : elem["swims"].as<JsonArrayConst>())
+        it.swims.push_back(read_swim(s));
+    } else {
+      it.isSet = false;
+      it.swim  = read_swim(elem);
+    }
+    w.items.push_back(std::move(it));
   }
   return true;
+}
+
+std::vector<FlatStep> WorkoutStorage::flatten(const Workout &w) {
+  std::vector<FlatStep> out;
+  int16_t setIdx = -1;
+  for (const auto &it : w.items) {
+    if (it.isSet) {
+      ++setIdx;
+      uint16_t reps = it.repeat < 1 ? 1 : it.repeat;
+      for (uint16_t r = 1; r <= reps; ++r) {
+        for (const auto &s : it.swims) {
+          FlatStep fs;
+          fs.swim = s;
+          fs.setIndex = setIdx;
+          fs.setRep   = r;
+          fs.setReps  = reps;
+          out.push_back(fs);
+        }
+      }
+    } else {
+      FlatStep fs;
+      fs.swim = it.swim;   // setIndex stays -1
+      out.push_back(fs);
+    }
+  }
+  return out;
 }
 
 std::vector<String> WorkoutStorage::list_ids() {

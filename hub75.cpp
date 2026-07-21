@@ -38,6 +38,12 @@ static uint16_t s_screensaver_sec = 300;     // 5 minutes; 0 = disabled
 static bool s_display_on = true;             // current panel power state
 static uint32_t s_last_activity_ms = 0;      // last time a workout was running
 
+// Panel layout: 0 = classic list, 1 = big countdown + next-two.
+static uint8_t s_panel_mode = 0;
+// Dry run lives here because hub75.cpp owns /settings.json; the value is pushed
+// into SwimMachine when a workout starts (see WorkoutManager::run).
+static bool s_dry_run = false;
+
 static uint8_t percent_to_brightness8(uint8_t p) {
   if (p > 100) p = 100;
   return (uint8_t)((p * 255 + 50) / 100);
@@ -57,6 +63,11 @@ static void settings_load() {
     if (ss >= 0 && ss <= 86400) {
       s_screensaver_sec = (uint16_t)ss;
     }
+    int pm = d["panel_mode"] | -1;
+    if (pm == 0 || pm == 1) {
+      s_panel_mode = (uint8_t)pm;
+    }
+    s_dry_run = d["dry_run"] | false;
   }
   f.close();
 }
@@ -76,6 +87,8 @@ static void settings_store() {
   }
   d["brightness"] = s_brightness_percent;
   d["screensaver_sec"] = s_screensaver_sec;
+  d["panel_mode"] = s_panel_mode;
+  d["dry_run"] = s_dry_run;
   File wf = LittleFS.open("/settings.json", "w");
   if (!wf) return;
   serializeJson(d, wf);
@@ -125,6 +138,20 @@ void HUB75_setScreensaverSec(uint16_t seconds) {
   // Changing the setting counts as activity and gives a fresh countdown.
   display_wake();
   s_last_activity_ms = millis();
+  settings_store();
+}
+
+uint8_t HUB75_getPanelMode() { return s_panel_mode; }
+
+void HUB75_setPanelMode(uint8_t mode) {
+  s_panel_mode = (mode == 1) ? 1 : 0;
+  settings_store();
+}
+
+bool AppSettings_getDryRun() { return s_dry_run; }
+
+void AppSettings_setDryRun(bool on) {
+  s_dry_run = on;
   settings_store();
 }
 
@@ -250,6 +277,80 @@ void printJSon(DynamicJsonDocument doc)
   // - Rest (pace == 0): DARK_ORANGE if not paused, RED if paused
   ColorRGB firstColor = (pace100s > 0) ? GREEN : (paused ? RED : DARK_ORANGE);
 
+  // ================= Mode 1: big countdown =================
+  // Large remaining meters + time for the current swim, that swim's name
+  // underneath, and only the next two swims along the bottom.
+  if (s_panel_mode == 1) {
+    const ColorRGB NEXT1{205, 133, 63};
+    const ColorRGB NEXT2{139, 69, 19};
+    const uint8_t bigSize  = 2;
+    const int bigCharW = 6 * (int)bigSize;   // 12 px per char
+    const int bigLineH = 8 * (int)bigSize;   // 16 px per line
+
+    dma_display->setFont(nullptr);
+    dma_display->setTextSize(bigSize);
+    dma_display->setTextColor(color565(firstColor));
+
+    // Line 1: remaining meters (or REST while resting)
+    String bigTop = (pace100s > 0) ? (String(metersVal) + "m") : String("REST");
+    int wTop = (int)bigTop.length() * bigCharW;
+    if (wTop > PANEL_WIDTH) wTop = PANEL_WIDTH;
+    dma_display->setCursor((PANEL_WIDTH - wTop) / 2, 0);
+    dma_display->print(bigTop);
+
+    // Line 2: remaining time
+    int wTime = (int)timeStr.length() * bigCharW;
+    dma_display->setCursor((PANEL_WIDTH - wTime) / 2, bigLineH);
+    dma_display->print(timeStr);
+
+    // Name of the current swim, centred under the countdown
+    dma_display->setTextSize(1);
+    String name = curNote;
+    while ((int)name.length() * 6 > PANEL_WIDTH && name.length() > 1) {
+      name.remove(name.length() - 1);
+    }
+    dma_display->setCursor((PANEL_WIDTH - (int)name.length() * 6) / 2, 2 * bigLineH + 2);
+    dma_display->print(name);
+
+    // Bottom: next two swims only, one TomThumb line each (cursor y = baseline)
+    dma_display->setFont(&TomThumb);
+    dma_display->setTextSize(1);
+    const int baselines[2] = { PANEL_HEIGHT - 8, PANEL_HEIGHT - 2 };
+    int drawn = 0;
+    if (!arr.isNull()) {
+      for (size_t i = 1; i < arr.size() && drawn < 2; ++i) {
+        JsonObject o = arr[i];
+        long p = o["pace100s"] | 0;
+        long dsec = o["durSec"] | 0;
+        const char *nt = o["note"] | "";
+
+        String line;
+        if (p > 0) {
+          long m = (dsec > 0) ? (long)((dsec * 100) / p) : 0;
+          line = String(m) + "M" + fmtMMSS(p) + " " + String(nt);
+        } else {
+          line = String("rest ") + fmtMMSS(dsec) + " " + String(nt);
+        }
+
+        int16_t bx, by; uint16_t bw, bh;
+        dma_display->getTextBounds(line.c_str(), 0, baselines[drawn], &bx, &by, &bw, &bh);
+        while (bw > PANEL_WIDTH && line.length() > 1) {
+          line.remove(line.length() - 1);
+          dma_display->getTextBounds(line.c_str(), 0, baselines[drawn], &bx, &by, &bw, &bh);
+        }
+        dma_display->setTextColor(color565(drawn == 0 ? NEXT1 : NEXT2));
+        dma_display->setCursor(0, baselines[drawn]);
+        dma_display->print(line);
+        drawn++;
+      }
+    }
+
+    dma_display->setFont(nullptr);
+    dma_display->setTextSize(1);
+    return;
+  }
+
+  // ================= Mode 0: classic list =================
   // Draw counters ~30% smaller (use size 1 as nearest integer approximation)
   const uint8_t counterSize = 1;
   int charW = 6 * (int)counterSize;

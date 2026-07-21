@@ -66,6 +66,7 @@ static uint8_t lastSentIdx2 = 0xC5; // so first increment is 0x64
 static uint8_t idx2Counter = 0xC5;  // so first increment is 0x64
 static bool readyToSendNext = true;
 static bool resendLastPacket = false;
+static bool s_dryRun = false;      // true = build/report packets but never transmit
 static uint8_t lastReceivedCommand = 0x00; // last command byte received from machine (data[3] of 111-byte packet)
 
 static void queuePkt(uint16_t command, uint16_t param = 0)
@@ -192,6 +193,23 @@ static void sendPkt()
   memcpy(b + 32, &t, 4);
   uint32_t c = crc32(b, 40);
   memcpy(b + 40, &c, 4);
+
+  if (s_dryRun)
+  {
+    // Dry run: never transmit. Still surface the packet to the UDP monitor so
+    // you can see what *would* have been sent, and self-confirm it (there is no
+    // machine to ACK) so the queue keeps flowing instead of retrying forever.
+    if (push_network_event_func)
+      push_network_event_func(b, sizeof b);
+
+    lastSentIdx2 = idx2;
+    resendLastPacket = false;
+    readyToSendNext = true;
+    nextmessagetosend += 2;
+    if (nextmessagetosend - messagequeue >= (int)(sizeof(messagequeue) / sizeof(*messagequeue)))
+      nextmessagetosend = messagequeue;
+    return;
+  }
 
   // Send via UDPEventSender (control socket)
   (void)ctrl.sendBytes(b, sizeof b);
@@ -377,6 +395,16 @@ SwimMachine::SwimStatus SwimMachine::getStatus()
 bool SwimMachine::isMachineFound()
 {
   return machineFound;
+}
+
+void SwimMachine::setDryRun(bool on)
+{
+  s_dryRun = on;
+}
+
+bool SwimMachine::isDryRun()
+{
+  return s_dryRun;
 }
 
 void SwimMachine::setPeerIP(IPAddress ip)

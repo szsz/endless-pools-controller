@@ -11,10 +11,29 @@ struct SwimStep {
   String   note;       // user‐entered note
 };
 
+// A workout is an ordered list of items. Each item is either a single swim or a
+// "set": a group of swims repeated `repeat` times. Sets do not nest (one level).
+struct WorkoutItem {
+  bool     isSet  = false;      // false = plain swim, true = a repeated set
+  uint16_t repeat = 1;          // set repeat count (>= 1); ignored for a plain swim
+  String   note;                // optional set label
+  SwimStep swim{};              // valid when !isSet
+  std::vector<SwimStep> swims;  // valid when isSet
+};
+
 struct Workout {
-  String id;                 // unique workout ID
+  String id;                    // unique workout ID
   String name;
-  std::vector<SwimStep> steps;
+  std::vector<WorkoutItem> items;   // authored structure (preserves sets)
+};
+
+// One run-time step after expanding every set, carrying set context so the
+// run screen / LED panel can show "Set 2/3".
+struct FlatStep {
+  SwimStep swim;
+  int16_t  setIndex = -1;   // -1 = not in a set; else 0-based index among the workout's sets
+  uint16_t setRep   = 0;    // 1-based repetition within its set
+  uint16_t setReps  = 0;    // total repetitions of its set
 };
 
 namespace WorkoutStorage {
@@ -36,6 +55,9 @@ namespace WorkoutStorage {
 
   /** JSON <→> Workout codecs. */
   String  to_json(const Workout &w);
-  
+
   bool from_json(const uint8_t *data, size_t len, Workout &w);
+
+  /** Expand all sets into a flat run-time list (with set context per step). */
+  std::vector<FlatStep> flatten(const Workout &w);
 }

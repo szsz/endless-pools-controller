@@ -30,6 +30,7 @@ inline void heapCheckHardImpl(const char* file, int line) {
 #endif
 
 static Workout current_workout_; // store currently active workout
+static std::vector<FlatStep> current_flat_; // active workout expanded to run-time steps (sets unrolled)
 
 
 void WorkoutManager::begin()
@@ -48,6 +49,7 @@ HEAP_CHECK_HARD();
 #endif
   // Clear currently active workout on start
   current_workout_ = Workout{};
+  current_flat_.clear();
 }
 
 bool WorkoutManager::run(const String &workout_id)
@@ -58,20 +60,31 @@ bool WorkoutManager::run(const String &workout_id)
     Serial.printf("WorkoutManager::run: failed to load workout id=%s\n", workout_id.c_str());
     return false; // Workout not found or failed to load
   }
-  if (!SwimMachine::isMachineFound())
+  // Apply the persisted dry-run setting to this run. In dry run nothing is ever
+  // transmitted, so we also drop the "machine must be discovered" requirement —
+  // that's the whole point: exercise a workout with no machine attached.
+  const bool dryRun = AppSettings_getDryRun();
+  SwimMachine::setDryRun(dryRun);
+
+  if (!dryRun && !SwimMachine::isMachineFound())
   {
     Serial.printf("Swim machine not found");
     return false;
   }
+  if (dryRun)
+  {
+    Serial.println("WorkoutManager: DRY RUN - swim machine will not be controlled");
+  }
 
   current_workout_ = w;
+  current_flat_ = WorkoutStorage::flatten(w);   // unroll sets into run-time steps
 
   std::vector<SwimMachine::Segment> segments;
-  for (const auto &step : w.steps)
+  for (const auto &fs : current_flat_)
   {
     SwimMachine::Segment seg;
-    seg.pace100s = step.pace100s;
-    seg.durSec = step.durSec;
+    seg.pace100s = fs.swim.pace100s;
+    seg.durSec = fs.swim.durSec;
     segments.push_back(seg);
   }
 
@@ -131,8 +144,8 @@ void WorkoutManager::push_status_()
 
   // Build status JSON on the heap to avoid loopTask stack overflow
   const size_t base = 2048;              // base for fixed fields
-  const size_t per  = 64;                // per remaining_swims entry (approx)
-  size_t cap = base + (current_workout_.steps.size() * per);
+  const size_t per  = 80;                // per remaining_swims entry (approx)
+  size_t cap = base + (current_flat_.size() * per);
   if (cap > 6144) cap = 6144;            // clamp to a sane upper bound
   DynamicJsonDocument doc(cap);
   doc["running"] = st.active;
@@ -142,21 +155,33 @@ void WorkoutManager::push_status_()
   doc["elapsed_ms"] = st.elapsedMs;
   doc["workout_title"] = current_workout_.name;
 
-  if (st.idx >= 0 && st.idx < (int)current_workout_.steps.size())
+  if (st.idx >= 0 && st.idx < (int)current_flat_.size())
   {
-    doc["current_step_note"] = current_workout_.steps[st.idx].note;
+    const auto &cur = current_flat_[st.idx];
+    doc["current_step_note"] = cur.swim.note;
+    if (cur.setIndex >= 0)               // current step belongs to a set
+    {
+      doc["set_index"] = cur.setIndex;   // 0-based set number within the workout
+      doc["set_rep"]   = cur.setRep;     // 1-based repetition ("2" of "2/3")
+      doc["set_reps"]  = cur.setReps;    // total repetitions ("3" of "2/3")
+    }
   }
 
-  // Add remaining swims from current step onward
+  // Add remaining swims from current step onward (sets already unrolled)
   JsonArray remaining = doc.createNestedArray("remaining_swims");
   if (st.idx >= 0)
-    for (int i = st.idx; i < (int)current_workout_.steps.size(); ++i)
+    for (int i = st.idx; i < (int)current_flat_.size(); ++i)
     {
-      const auto &s = current_workout_.steps[i];
+      const auto &fs = current_flat_[i];
       JsonObject swim = remaining.createNestedObject();
-      swim["pace100s"] = s.pace100s;
-      swim["durSec"] = s.durSec;
-      swim["note"] = s.note;
+      swim["pace100s"] = fs.swim.pace100s;
+      swim["durSec"]   = fs.swim.durSec;
+      swim["note"]     = fs.swim.note;
+      if (fs.setIndex >= 0)
+      {
+        swim["set_rep"]  = fs.setRep;
+        swim["set_reps"] = fs.setReps;
+      }
     }
 
 

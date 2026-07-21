@@ -28,5 +28,14 @@ void HUB75_setScreensaverSec(uint16_t seconds);
 // running: while it is, the display is kept awake and the idle timer is reset.
 void HUB75_screensaverTick(bool workoutActive);
 
+// Panel layout mode: 0 = classic list, 1 = big countdown + next two swims.
+uint8_t HUB75_getPanelMode();
+void HUB75_setPanelMode(uint8_t mode);
+
+// hub75.cpp owns /settings.json, so this non-panel setting is persisted here
+// too. The value is pushed into SwimMachine when a workout starts.
+bool AppSettings_getDryRun();
+void AppSettings_setDryRun(bool on);
+
 void printJSon(DynamicJsonDocument doc);
 void drawSwimmerAnimationTick();

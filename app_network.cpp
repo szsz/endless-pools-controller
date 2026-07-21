@@ -5,6 +5,7 @@
 #include <ArduinoJson.h>
 #include "workout_manager.h"
 #include "workout_storage.h"
+#include "swim_machine.h"
 #include "hub75.h"
 #include "otapassword.h"
 
@@ -201,9 +202,15 @@ void begin()
   // Settings API: brightness get/set
   g_server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *r)
               {
-                StaticJsonDocument<64> d;
+                StaticJsonDocument<192> d;
                 d["brightness"] = HUB75_getBrightnessPercent();
                 d["screensaver_sec"] = HUB75_getScreensaverSec();
+                d["panel_mode"] = HUB75_getPanelMode();   // 0 = classic, 1 = big countdown
+                d["dry_run"] = AppSettings_getDryRun();
+                // Capability flag: this firmware stores nested "set" items
+                // (repeat xN). Older firmware omits it, so the web UI can hide
+                // the set editor instead of silently corrupting sets.
+                d["sets"] = true;
                 String out; serializeJson(d, out);
                 send_json(r, out); });
 
@@ -230,9 +237,21 @@ void begin()
                   if (s < 0 || s > 86400) { r->send(400, "text/plain", "screensaver_sec 0..86400"); return; }
                   HUB75_setScreensaverSec((uint16_t)s);
                 }
-                StaticJsonDocument<64> resp;
+                if (d.containsKey("panel_mode")) {
+                  int pm = d["panel_mode"] | -1;
+                  if (pm != 0 && pm != 1) { r->send(400, "text/plain", "panel_mode 0 or 1"); return; }
+                  HUB75_setPanelMode((uint8_t)pm);
+                }
+                if (d.containsKey("dry_run")) {
+                  bool dr = d["dry_run"] | false;
+                  AppSettings_setDryRun(dr);
+                  SwimMachine::setDryRun(dr);   // take effect immediately, even mid-run
+                }
+                StaticJsonDocument<192> resp;
                 resp["brightness"] = HUB75_getBrightnessPercent();
                 resp["screensaver_sec"] = HUB75_getScreensaverSec();
+                resp["panel_mode"] = HUB75_getPanelMode();
+                resp["dry_run"] = AppSettings_getDryRun();
                 String out; serializeJson(resp, out);
                 send_json(r, out);
               });
@@ -272,6 +291,9 @@ void begin()
               });
 
   g_server.on("/", HTTP_GET, serve_index);
+  // Same page under its explicit name: links/bookmarks to "/index.html"
+  // (e.g. Settings > Back to Editor) would otherwise 404.
+  g_server.on("/index.html", HTTP_GET, serve_index);
   g_server.serveStatic("/static", LittleFS, "/static/");
 
   // API: list IDs
