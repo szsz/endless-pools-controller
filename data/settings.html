@@ -82,9 +82,19 @@
         </select>
       </label>
     </div>
+    <div class="row">
+      <label class="inline" for="caps">
+        <input id="caps" type="checkbox" style="transform:scale(1.4); margin-right:0.4rem;" />
+        <span><strong>Capitalise</strong> note text on the panel</span>
+      </label>
+    </div>
+    <p class="muted">The panel's small font reads better in capitals. Applies to swim
+      notes and set names on the LED panel only, not the web UI.</p>
+
     <p class="muted"><strong>Big</strong> shows large remaining metres and time for the
-      current swim, its name underneath, and only the next two swims at the bottom.
-      Preview both layouts offline by opening <code>viewer/hub75.html</code> on your computer.</p>
+      current swim, with the upcoming list beneath. <strong>Classic</strong> uses smaller
+      counters and fits more of the list. In both, the swim in progress is the first list row.
+      Preview either offline by opening <code>viewer/hub75.html</code> on your computer.</p>
     <div id="pmMsg" aria-live="polite"></div>
   </section>
 
@@ -133,6 +143,7 @@
     const dryRunEl = $('#dryRun');
     const drMsgEl = $('#drMsg');
     const panelModeEl = $('#panelMode');
+    const capsEl = $('#caps');
     const pmMsgEl = $('#pmMsg');
 
     function flash(el, text, ok) {
@@ -165,6 +176,11 @@
         e.target.checked ? 'Dry run ON — machine will not be controlled' : 'Dry run off');
     });
 
+    capsEl.addEventListener('change', (e) => {
+      patchSettings({ caps: !!e.target.checked }, pmMsgEl,
+        e.target.checked ? 'Capitals on' : 'Capitals off');
+    });
+
     panelModeEl.addEventListener('change', (e) => {
       patchSettings({ panel_mode: parseInt(e.target.value, 10) }, pmMsgEl, 'Display mode saved');
     });
@@ -191,6 +207,7 @@
         screensaverEl.value = Math.round(ss / 60);
         dryRunEl.checked = j.dry_run === true;
         panelModeEl.value = String(j.panel_mode === 1 ? 1 : 0);
+        capsEl.checked = j.caps !== false;   // default on
       } catch (e) {
         console.error(e);
       }

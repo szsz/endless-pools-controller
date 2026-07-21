@@ -34,6 +34,10 @@ void HUB75_setPanelMode(uint8_t mode);
 
 // hub75.cpp owns /settings.json, so this non-panel setting is persisted here
 // too. The value is pushed into SwimMachine when a workout starts.
+// Draw note text in capitals (small fonts read better all-caps).
+bool AppSettings_getCaps();
+void AppSettings_setCaps(bool on);
+
 bool AppSettings_getDryRun();
 void AppSettings_setDryRun(bool on);
 

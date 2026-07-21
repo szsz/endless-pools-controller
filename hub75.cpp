@@ -43,6 +43,8 @@ static uint8_t s_panel_mode = 0;
 // Dry run lives here because hub75.cpp owns /settings.json; the value is pushed
 // into SwimMachine when a workout starts (see WorkoutManager::run).
 static bool s_dry_run = false;
+// Draw note text in capitals; the small fonts read better all-caps.
+static bool s_caps = true;
 
 static uint8_t percent_to_brightness8(uint8_t p) {
   if (p > 100) p = 100;
@@ -68,6 +70,7 @@ static void settings_load() {
       s_panel_mode = (uint8_t)pm;
     }
     s_dry_run = d["dry_run"] | false;
+    s_caps = d["caps"] | true;
   }
   f.close();
 }
@@ -89,6 +92,7 @@ static void settings_store() {
   d["screensaver_sec"] = s_screensaver_sec;
   d["panel_mode"] = s_panel_mode;
   d["dry_run"] = s_dry_run;
+  d["caps"] = s_caps;
   File wf = LittleFS.open("/settings.json", "w");
   if (!wf) return;
   serializeJson(d, wf);
@@ -145,6 +149,13 @@ uint8_t HUB75_getPanelMode() { return s_panel_mode; }
 
 void HUB75_setPanelMode(uint8_t mode) {
   s_panel_mode = (mode == 1) ? 1 : 0;
+  settings_store();
+}
+
+bool AppSettings_getCaps() { return s_caps; }
+
+void AppSettings_setCaps(bool on) {
+  s_caps = on;
   settings_store();
 }
 
@@ -229,10 +240,12 @@ static String fmtMMSSs(long secs)
 
 // Right-edge sidebar for one set block, spanning [top, bottom) minus one dark
 // pixel at each end so two adjacent sets never merge into a single bar. It is
-// divided into `reps` segments (1px gaps) to show how many repetitions the set
-// has; if that many segments cannot fit, a solid bar is drawn instead. Rows in
-// [blueTop, blueBot) use the "current" colour to mark the exercise running now.
-static void drawSetSidebar(int top, int bottom, int reps,
+// Future sets are divided into `reps` segments (1px gaps) to show how many
+// repetitions they have, falling back to a solid bar when that many will not
+// fit. The set in progress is drawn UNsegmented, because there the bar's job is
+// to mark which exercise is running (rows [blueTop, blueBot) in the "current"
+// colour) - segmenting it too would put two unrelated meanings on one bar.
+static void drawSetSidebar(int top, int bottom, int reps, bool segmented,
                            int blueTop, int blueBot,
                            uint16_t colSet, uint16_t colCurrent)
 {
@@ -248,7 +261,7 @@ static void drawSetSidebar(int top, int bottom, int reps,
     dma_display->drawPixel(x, yy, blue ? colCurrent : colSet);
   };
 
-  if (2 * reps - 1 <= h) {                      // segments fit: one per repetition
+  if (segmented && 2 * reps - 1 <= h) {        // segments fit: one per repetition
     const int g = 1;
     for (int k = 0; k < reps; ++k) {
       int ys = lo + (k * (h + g)) / reps;
@@ -271,7 +284,7 @@ static void drawTomThumbPaceLine(int baseline, long meters, long pace,
   const int mins = (int)(pace / 60), secs = (int)(pace % 60);
   const bool useGlyph = (mins >= 1 && mins <= 3);
 
-  String pre = String(meters) + "m ";
+  String pre = String(meters) + "m";
   char sb[4]; snprintf(sb, sizeof sb, "%02d", secs);
   const String secsStr(sb);
   String tail = String(" ") + note;
@@ -324,12 +337,17 @@ static void drawUpcomingList(JsonArray arr, int startY,
     long pace = o["pace100s"] | 0;
     long dur  = o["durSec"] | 0;
     const char *note = o["note"] | "";
+    // A set's swims are often unnamed; fall back to the set's own name so the
+    // row still says what it belongs to.
+    if (note[0] == '\0') note = o["set_name"] | "";
+    String noteStr(note);
+    if (s_caps) noteStr.toUpperCase();
     if (pace > 0) {
       long meters = (dur > 0) ? (long)((dur * 100) / pace) : 0;
-      drawTomThumbPaceLine(baseline, meters, pace, String(note), textW, listCol);
+      drawTomThumbPaceLine(baseline, meters, pace, noteStr, textW, listCol);
     } else {
       dma_display->setTextColor(listCol);
-      String line = String("rest ") + fmtMMSSs(dur) + " " + String(note);
+      String line = String("rest ") + fmtMMSSs(dur) + " " + noteStr;
       int16_t bx, by; uint16_t bw, bh;
       dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);
       while (bw > textW && line.length() > 1) {
@@ -377,8 +395,10 @@ static void drawUpcomingList(JsonArray arr, int startY,
       if (si == curSetIdx && pos == curSetPos) { blueTop = y - 5; blueBot = y + 1; }
       y += LHTT;
     }
-    // y is the next baseline; this block's last visual row ends at y - 5
-    drawSetSidebar(blockTop, y - 5, reps, blueTop, blueBot, markSet, markCur);
+    // y is the next baseline; this block's last visual row ends at y - 5.
+    // The active set is unsegmented (its bar marks the current exercise instead).
+    const bool isActiveSet = (si == curSetIdx);
+    drawSetSidebar(blockTop, y - 5, reps, !isActiveSet, blueTop, blueBot, markSet, markCur);
   }
 
   dma_display->setFont(nullptr);
@@ -535,23 +555,24 @@ void printJSon(DynamicJsonDocument doc)
   
 
   // ---- progress bar: one dashed segment per set, spanning the full width ----
-  // Sits between the counters and the list. The segment for the set we are
-  // currently in is blue, the rest orange.
-  const int setCount = doc["set_count"] | 0;
-  const bool inSet = (curSetIdx >= 0 && setCount > 0);
+  // Sits between the counters and the list. Inside a set it shows one segment
+  // per REPETITION of that set, with the repetition in progress blue.
+  const int curSetReps = doc["set_reps"] | 0;
+  const int curSetRep  = doc["set_rep"]  | 0;   // 1-based
+  const bool inSet = (curSetIdx >= 0 && curSetReps > 0);
 
   const int barY = counterH + 1;             // 2px tall bar just under the counters
   int listStartY = counterH + 2;
 
   if (inSet) {
-    // Inside a set: one segment per set, the one we're in shown blue.
-    const int gap = (setCount > 8) ? 1 : 2;  // tighter spacing once there are many sets
-    for (int i = 0; i < setCount; ++i) {
+    // One segment per repetition of the set we're in; gaps tighten past 8.
+    const int gap = (curSetReps > 8) ? 1 : 2;
+    for (int i = 0; i < curSetReps; ++i) {
       // Spread across the whole panel: the last segment always ends at x = 63.
-      int xs = (i * (PANEL_WIDTH + gap)) / setCount;
-      int xe = ((i + 1) * (PANEL_WIDTH + gap)) / setCount - gap - 1;
-      if (xe < xs) xe = xs;                  // keep at least one pixel per set
-      uint16_t c = color565(i == curSetIdx ? MARK_CURRENT : BAR_IDLE);
+      int xs = (i * (PANEL_WIDTH + gap)) / curSetReps;
+      int xe = ((i + 1) * (PANEL_WIDTH + gap)) / curSetReps - gap - 1;
+      if (xe < xs) xe = xs;                  // at least one pixel per repetition
+      uint16_t c = color565(i == (curSetRep - 1) ? MARK_CURRENT : BAR_IDLE);
       for (int x = xs; x <= xe && x < PANEL_WIDTH; ++x) {
         dma_display->drawPixel(x, barY, c);
         dma_display->drawPixel(x, barY + 1, c);

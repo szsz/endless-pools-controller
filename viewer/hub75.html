@@ -67,6 +67,7 @@
       </select>
     </label>
     <label><input type="checkbox" id="pausedChk"> Simulate <em>paused</em> (rest turns red)</label>
+    <label><input type="checkbox" id="capsChk" checked> Capitalise note text (panel setting)</label>
     <label>Zoom <input type="number" id="zoom" min="2" max="16" value="9" style="width:5rem"></label>
   </fieldset>
 
@@ -102,6 +103,7 @@ const DARK_ORANGE = c565(255,140,0), RED = c565(255,0,0), GREEN = c565(25,200,25
 // One colour for upcoming items (the brighter of the two shades that used to
 // alternate) — matches hub75.cpp.
 const LIST_COLOR = c565(205,133,63);
+let CAPS = true;   // mirrors the device's "caps" setting
 const BAR_IDLE = c565(255,140,0);        // progress-bar segment, not current
 const MARK_CURRENT = c565(40,120,255);   // blue: current swim
 const MARK_SET = c565(25,200,25);        // green: step belongs to a set
@@ -175,7 +177,7 @@ function drawPaceGlyph(x, top, mins, gw, gh, advance, color) {
 function drawPaceLineGFX(baseline, meters, pace, note, maxW, color, font) {
   const mins = Math.floor(pace / 60), secs = pace % 60;
   const useGlyph = mins >= 1 && mins <= 3;
-  const pre = meters + 'm ';
+  const pre = meters + 'm';
   const secsStr = String(secs).padStart(2, '0');
   let tail = ' ' + note;
   const glyphAdv = 4;
@@ -195,7 +197,7 @@ function drawPaceLineGFX(baseline, meters, pace, note, maxW, color, font) {
 }
 function drawPaceLineBuiltin(y, meters, pace, color) {
   const mins = Math.floor(pace / 60), secs = pace % 60;
-  const pre = meters + 'm ';
+  const pre = meters + 'm';
   printBuiltin(0, y, pre, color, 1);
   let cx = pre.length * 6;
   if (mins >= 1 && mins <= 3) {
@@ -270,20 +272,21 @@ function render(doc, mode) {
   printBuiltin(x0 + timeW + gapW, 0, metersStr, firstColor, 1);
 
   // ---- bar under the counters ----
-  const setCount = doc.set_count || 0;
   const curSetIdx = (typeof doc.set_index === 'number') ? doc.set_index : -1;
   const curSetPos = (typeof doc.set_pos === 'number') ? doc.set_pos : -1;
-  const inSet = curSetIdx >= 0 && setCount > 0;
+  const curSetReps = doc.set_reps || 0;
+  const curSetRep = doc.set_rep || 0;          // 1-based
+  const inSet = curSetIdx >= 0 && curSetReps > 0;
   const barY = counterH + 1;
   let listStartY = counterH + 2;
 
   if (inSet) {
-    const gap = setCount > 8 ? 1 : 2;
-    for (let i = 0; i < setCount; i++) {
-      let xs = Math.trunc((i * (W + gap)) / setCount);
-      let xe = Math.trunc(((i + 1) * (W + gap)) / setCount) - gap - 1;
+    const gap = curSetReps > 8 ? 1 : 2;      // one segment per REPETITION
+    for (let i = 0; i < curSetReps; i++) {
+      let xs = Math.trunc((i * (W + gap)) / curSetReps);
+      let xe = Math.trunc(((i + 1) * (W + gap)) / curSetReps) - gap - 1;
       if (xe < xs) xe = xs;
-      const col = (i === curSetIdx) ? MARK_CURRENT : BAR_IDLE;
+      const col = (i === (curSetRep - 1)) ? MARK_CURRENT : BAR_IDLE;
       for (let x = xs; x <= xe && x < W; x++) { px(x, barY, col); px(x, barY + 1, col); }
     }
     listStartY = barY + 4;
@@ -353,7 +356,10 @@ function drawUpcomingList(arr, startY, curSetIdx, curSetPos, listCol, markSet, m
 
 /* one upcoming row (pace line, or a rest which keeps plain M:SS) */
 function drawFutureRow(o, y, maxW, font) {
-  const pace = o.pace100s || 0, dur = o.durSec || 0, note = o.note || '';
+  const pace = o.pace100s || 0, dur = o.durSec || 0;
+  // a set's swims are often unnamed: fall back to the set's own name
+  let note = o.note || o.set_name || '';
+  if (CAPS) note = note.toUpperCase();
   if (pace > 0) {
     const meters = dur > 0 ? Math.floor((dur * 100) / pace) : 0;
     drawPaceLineGFX(y, meters, pace, note, maxW, LIST_COLOR, font);
@@ -365,7 +371,7 @@ function drawFutureRow(o, y, maxW, font) {
 /* Sidebar for one set block: dark pixel at each end so adjacent sets never
    merge, divided into one segment per repetition (1px gaps), solid if they
    cannot fit. Rows in [blueTop, blueBot) mark the exercise running now. */
-function drawSetSidebar(top, bottom, reps, blueTop, blueBot, colSet, colCurrent) {
+function drawSetSidebar(top, bottom, reps, segmented, blueTop, blueBot, colSet, colCurrent) {
   const x = W - 1;
   const lo = top + 1, hi = bottom - 1;
   const h = hi - lo;
@@ -375,7 +381,7 @@ function drawSetSidebar(top, bottom, reps, blueTop, blueBot, colSet, colCurrent)
     if (yy < 0 || yy >= H) return;
     px(x, yy, (yy >= blueTop && yy < blueBot) ? colCurrent : colSet);
   };
-  if (2 * reps - 1 <= h) {
+  if (segmented && 2 * reps - 1 <= h) {
     const g = 1;
     for (let k = 0; k < reps; k++) {
       let ys = lo + Math.trunc((k * (h + g)) / reps);
@@ -415,11 +421,19 @@ function buildMock(nSets) {
   // Plain (non-set) swims and repeated sets both appear, so the green set
   // marker shows up on some rows and is absent on others.
   const steps = [{ pace100s: 95, durSec: 120, note: 'warmup' }];   // plain
+  // Short items at 2:00 and 3:00 pace so the 2-bar and 3-bar minute glyphs
+  // are exercised (everything else here is 1:xx, which is a single bar).
+  steps.push({ pace100s: 120, durSec: 30, note: 'easy 2min' });
+  steps.push({ pace100s: 180, durSec: 30, note: 'easy 3min' });
   const specs = [
-    { reps: 3, swims: [{ pace100s: 80,  durSec: 45, note: 'sprint' },
-                       { pace100s: 0,   durSec: 20, note: 'easy'   }] },
-    { reps: 2, swims: [{ pace100s: 100, durSec: 60, note: 'pull'   },
-                       { pace100s: 0,   durSec: 30, note: 'rest'   }] }
+    { reps: 3, name: '3x sprint',
+      swims: [{ pace100s: 80,  durSec: 45, note: 'sprint' },
+              { pace100s: 0,   durSec: 20, note: 'easy'   }] },
+    { reps: 2, name: '2x pull',
+      swims: [{ pace100s: 100, durSec: 60, note: 'pull'   },
+              { pace100s: 0,   durSec: 30, note: 'rest'   }] },
+    { reps: 18, swims: [{ pace100s: 86, durSec: 86, note: '' },
+                        { pace100s: 0,  durSec: 90, note: '' }], name: '18x 100' }
   ];
   for (let s = 0; s < nSets; s++) {
     const spec = specs[s % specs.length];
@@ -427,7 +441,8 @@ function buildMock(nSets) {
       let pos = 0;
       for (const sw of spec.swims) {
         steps.push({ ...sw, set_index: s, set_rep: rep, set_reps: spec.reps,
-                     set_size: spec.swims.length, set_pos: pos++ });
+                     set_size: spec.swims.length, set_pos: pos++,
+                     set_name: spec.name || '' });
       }
     }
     // Separator only after the first set (and only when there are 3+), so the
@@ -453,7 +468,6 @@ function statusDoc() {
     paused: document.getElementById('pausedChk').checked,
     elapsed_ms: elapsedMs,
     current_step_note: cur.note || '',
-    set_count: N_SETS,
     remaining_swims: STEPS.slice(idx).map(s => ({
       pace100s: s.pace100s, durSec: s.durSec, note: s.note,
       ...(typeof s.set_index === 'number'
@@ -514,6 +528,7 @@ document.getElementById('nsets').addEventListener('change', (e) => {
   STEPS = buildMock(N_SETS);
   idx = 0; elapsedMs = 0; renderStepTable();
 });
+document.getElementById('capsChk').addEventListener('change', (e) => { CAPS = e.target.checked; });
 document.getElementById('zoom').addEventListener('input', (e) => {
   ZOOM = Math.max(2, Math.min(16, parseInt(e.target.value, 10) || 9));
 });

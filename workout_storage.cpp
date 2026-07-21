@@ -127,6 +127,7 @@ std::vector<FlatStep> WorkoutStorage::flatten(const Workout &w) {
           fs.setReps  = reps;
           fs.setSize  = (uint16_t)it.swims.size();
           fs.setPos   = pos++;
+          fs.setName  = it.note;
           out.push_back(fs);
         }
       }

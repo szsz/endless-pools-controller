@@ -207,6 +207,7 @@ void begin()
                 d["screensaver_sec"] = HUB75_getScreensaverSec();
                 d["panel_mode"] = HUB75_getPanelMode();   // 0 = classic, 1 = big countdown
                 d["dry_run"] = AppSettings_getDryRun();
+                d["caps"] = AppSettings_getCaps();
                 // Capability flag: this firmware stores nested "set" items
                 // (repeat xN). Older firmware omits it, so the web UI can hide
                 // the set editor instead of silently corrupting sets.
@@ -242,6 +243,9 @@ void begin()
                   if (pm != 0 && pm != 1) { r->send(400, "text/plain", "panel_mode 0 or 1"); return; }
                   HUB75_setPanelMode((uint8_t)pm);
                 }
+                if (d.containsKey("caps")) {
+                  AppSettings_setCaps(d["caps"] | true);
+                }
                 if (d.containsKey("dry_run")) {
                   bool dr = d["dry_run"] | false;
                   AppSettings_setDryRun(dr);
@@ -252,6 +256,7 @@ void begin()
                 resp["screensaver_sec"] = HUB75_getScreensaverSec();
                 resp["panel_mode"] = HUB75_getPanelMode();
                 resp["dry_run"] = AppSettings_getDryRun();
+                resp["caps"] = AppSettings_getCaps();
                 String out; serializeJson(resp, out);
                 send_json(r, out);
               });

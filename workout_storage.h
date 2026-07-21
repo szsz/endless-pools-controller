@@ -36,6 +36,7 @@ struct FlatStep {
   uint16_t setReps  = 0;    // total repetitions of its set
   uint16_t setSize  = 0;    // number of distinct swims in its set (one repetition)
   uint16_t setPos   = 0;    // 0-based position of this swim within one repetition
+  String   setName;         // the set's own name, for rows whose swim has no note
 };
 
 namespace WorkoutStorage {

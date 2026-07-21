@@ -155,12 +155,6 @@ void WorkoutManager::push_status_()
   doc["elapsed_ms"] = st.elapsedMs;
   doc["workout_title"] = current_workout_.name;
 
-  // Total number of sets in the workout — the panel's progress bar draws one
-  // segment per set.
-  uint16_t setCount = 0;
-  for (const auto &it : current_workout_.items) if (it.isSet) ++setCount;
-  doc["set_count"] = setCount;
-
   if (st.idx >= 0 && st.idx < (int)current_flat_.size())
   {
     const auto &cur = current_flat_[st.idx];
@@ -191,6 +185,7 @@ void WorkoutManager::push_status_()
         swim["set_reps"] = fs.setReps;
         swim["set_size"] = fs.setSize;     // exercises per repetition
         swim["set_pos"]  = fs.setPos;      // position within one repetition
+        swim["set_name"] = fs.setName;     // shown when the swim has no note
       }
     }
 
