@@ -164,12 +164,13 @@ function fitGFX(str, font, maxW) {
 
 /* Compact pace notation — mirrors drawPaceMinuteGlyph() / drawTomThumbPaceLine()
    in hub75.cpp: minutes become 1-3 horizontal bars, then the 2 seconds digits. */
-function drawPaceGlyph(x, top, mins, gw, gh, color) {
-  const bar = (yy) => { for (let i = 0; i < gw; i++) px(x + i, yy, color); };
+function drawPaceGlyph(x, top, mins, gw, gh, advance, color) {
+  const x0 = x + advance - gw - 1;        // narrower than the cell, 1px clear of the seconds
+  const bar = (yy) => { for (let i = 0; i < gw; i++) px(x0 + i, yy, color); };
   bar(top);
   if (mins >= 2) bar(top + Math.trunc((gh - 1) / 2));
   if (mins >= 3) bar(top + gh - 1);
-  return gw + 1;
+  return advance;
 }
 function drawPaceLineGFX(baseline, meters, pace, note, maxW, color, font) {
   const mins = Math.floor(pace / 60), secs = pace % 60;
@@ -184,7 +185,7 @@ function drawPaceLineGFX(baseline, meters, pace, note, maxW, color, font) {
   let cx = 0;
   for (const ch of pre) cx += drawCharGFX(cx, baseline, ch, color, font);
   if (useGlyph) {
-    drawPaceGlyph(cx, baseline - 5, mins, 3, 5, color);
+    drawPaceGlyph(cx, baseline - 5, mins, 2, 5, 4, color);
     cx += glyphAdv;
     for (const ch of secsStr) cx += drawCharGFX(cx, baseline, ch, color, font);
   } else {
@@ -198,7 +199,7 @@ function drawPaceLineBuiltin(y, meters, pace, color) {
   printBuiltin(0, y, pre, color, 1);
   let cx = pre.length * 6;
   if (mins >= 1 && mins <= 3) {
-    drawPaceGlyph(cx, y, mins, 5, 7, color);
+    drawPaceGlyph(cx, y, mins, 3, 7, 6, color);
     cx += 6;
     printBuiltin(cx, y, String(secs).padStart(2, '0'), color, 1);
   } else {
@@ -252,33 +253,10 @@ function render(doc, mode) {
     const wTime = timeStr.length * bigCharW;
     printBuiltin(Math.trunc((W - wTime) / 2), bigLineH, timeStr, firstColor, bigSize);
 
-    let name = curNote;
-    while (name.length * 6 > W && name.length > 1) name = name.slice(0, -1);
-    printBuiltin(Math.trunc((W - name.length * 6) / 2), 2*bigLineH + 2, name, firstColor, 1);
-
-    const baselines = [H - 8, H - 2];
-    let drawn = 0;
-    // same rule as the list: a set's swims appear once, not once per repetition
-    const first = arr[0] || {};
-    let bSetIdx = (typeof first.set_index === 'number') ? first.set_index : -1;
-    let bSetRep = (typeof first.set_rep === 'number') ? first.set_rep : -1;
-    for (let i = 1; i < arr.length && drawn < 2; i++) {
-      const o = arr[i];
-      const p = o.pace100s || 0, dsec = o.durSec || 0, nt = o.note || '';
-
-      const si = (typeof o.set_index === 'number') ? o.set_index : -1;
-      const sr = (typeof o.set_rep === 'number') ? o.set_rep : -1;
-      if (si >= 0) {
-        if (si === bSetIdx && sr !== bSetRep) continue;
-        if (si !== bSetIdx) { bSetIdx = si; bSetRep = sr; }
-      }
-      if (p > 0) {
-        drawPaceLineGFX(baselines[drawn], Math.floor((dsec * 100) / p), p, nt, W, LIST_COLOR, TT);
-      } else {
-        printGFX(0, baselines[drawn], fitGFX('rest ' + fmtMMSS(dsec) + ' ' + nt, TT, W), LIST_COLOR, TT);
-      }
-      drawn++;
-    }
+    // The list fills the rest of the panel; the swim in progress is its first
+    // row, so its name shows there instead of as a separate heading.
+    drawUpcomingList(arr, 2 * bigLineH + 2, curSetIdx, curSetPos,
+                     LIST_COLOR, MARK_SET, MARK_CURRENT, TT);
     return;
   }
 
@@ -291,15 +269,15 @@ function render(doc, mode) {
   printBuiltin(x0, 0, timeStr, firstColor, 1);
   printBuiltin(x0 + timeW + gapW, 0, metersStr, firstColor, 1);
 
-  // ---- progress bar: one dashed segment per set, full panel width ----
+  // ---- bar under the counters ----
   const setCount = doc.set_count || 0;
   const curSetIdx = (typeof doc.set_index === 'number') ? doc.set_index : -1;
+  const curSetPos = (typeof doc.set_pos === 'number') ? doc.set_pos : -1;
   const inSet = curSetIdx >= 0 && setCount > 0;
   const barY = counterH + 1;
   let listStartY = counterH + 2;
 
   if (inSet) {
-    // inside a set: one segment per set, the one we're in shown blue
     const gap = setCount > 8 ? 1 : 2;
     for (let i = 0; i < setCount; i++) {
       let xs = Math.trunc((i * (W + gap)) / setCount);
@@ -310,67 +288,103 @@ function render(doc, mode) {
     }
     listStartY = barY + 4;
   } else if (durSecCurrent > 0) {
-    // not in a set: progress through the current swim, orange easing to green
     let done = durSecCurrent - remTop;
     if (done < 0) done = 0;
     if (done > durSecCurrent) done = durSecCurrent;
     const filled = Math.trunc((done * W) / durSecCurrent);
-    const r = Math.trunc(255 + ((25  - 255) * done) / durSecCurrent);
-    const g = Math.trunc(140 + ((200 - 140) * done) / durSecCurrent);
-    const b = Math.trunc(0   + ((25  - 0)   * done) / durSecCurrent);
-    const col = c565(r, g, b);
+    const col = c565(Math.trunc(255 + ((25 - 255) * done) / durSecCurrent),
+                     Math.trunc(140 + ((200 - 140) * done) / durSecCurrent),
+                     Math.trunc(0 + ((25 - 0) * done) / durSecCurrent));
     for (let x = 0; x < filled && x < W; x++) { px(x, barY, col); px(x, barY + 1, col); }
     listStartY = barY + 4;
   }
 
-  const LH6 = 8, LHTT = 6;
-  let y = listStartY;
-  let shown = 0;
-  // A set is stored unrolled; the panel lists each of its swims only once, so
-  // any later repetition of a set we've already started is skipped.
-  let seenSetIdx = -1, seenSetRep = -1;
-  for (let i = 0; i < arr.length && shown < 9; i++) {
+  drawUpcomingList(arr, listStartY, curSetIdx, curSetPos,
+                   LIST_COLOR, MARK_SET, MARK_CURRENT, TT);
+}
+
+/* The upcoming list, shared by both modes. The swim in progress is simply its
+   first row (blue on the right edge) rather than a separate heading, so every
+   row is the same height and the list can fill the panel. A set is listed once
+   as a block of set_size rows in canonical order. Mirrors drawUpcomingList(). */
+function drawUpcomingList(arr, startY, curSetIdx, curSetPos, listCol, markSet, markCur, font) {
+  if (!arr || arr.length === 0) return;
+  const LHTT = 6, textW = W - 2;
+  let y = startY + 5;                       // TomThumb cursor y is the baseline
+  const setDone = {};
+
+  for (let i = 0; i < arr.length && (y - 5) < H; i++) {
     const o = arr[i];
-    const pace = o.pace100s || 0, dur = o.durSec || 0, note = o.note || '';
-
     const si = (typeof o.set_index === 'number') ? o.set_index : -1;
-    const sr = (typeof o.set_rep === 'number') ? o.set_rep : -1;
-    if (si >= 0) {
-      if (si === seenSetIdx && sr !== seenSetRep) continue;   // later repetition
-      if (si !== seenSetIdx) { seenSetIdx = si; seenSetRep = sr; }
-    }
 
-    if (i === 0 && pace === 0) { y += 5; continue; }   // rest: counter only
-
-    const rowStart = y;
-
-    if (i === 0) {
-      const meters = dur > 0 ? Math.floor((dur * 100) / pace) : 0;
-      drawPaceLineBuiltin(y, meters, pace, firstColor); y += LH6;
-      printBuiltin(0, y, note, firstColor, 1);         y += LH6; y += 5;
-    } else {
-      if (pace > 0) {
-        const meters = dur > 0 ? Math.floor((dur * 100) / pace) : 0;
-        drawPaceLineGFX(y, meters, pace, note, W - 2, LIST_COLOR, TT);
-      } else {
-        // a rest shows its duration, not a pace, so it keeps plain M:SS
-        printGFX(0, y, fitGFX('rest ' + fmtMMSS(dur) + ' ' + note, TT, W - 2), LIST_COLOR, TT);
+    if (si < 0) {
+      drawFutureRow(o, y, textW, font);
+      if (i === 0) {
+        for (let yy = y - 5; yy < y + 1 && yy < H; yy++) if (yy >= 0) px(W - 1, yy, markCur);
       }
       y += LHTT;
+      continue;
     }
+    if (setDone[si]) continue;
+    setDone[si] = true;
 
-    // right-edge marker: blue = current swim, green = belongs to a set
-    if (i === 0 || si >= 0) {
-      // built-in font draws downward from the cursor, TomThumb upward from its
-      // baseline, so the marked rows differ per font.
-      const markTop = (i === 0) ? rowStart : rowStart - 5;
-      const markBot = (i === 0) ? rowStart + 2 * LH6 : rowStart + 1;
-      const mc = (i === 0) ? MARK_CURRENT : MARK_SET;
-      for (let yy = markTop; yy < markBot && yy < H; yy++) if (yy >= 0) px(W - 1, yy, mc);
+    const size = o.set_size || 1;
+    const reps = o.set_reps || 1;
+    const blockTop = y - 5;
+    let blueTop = -1, blueBot = -1;
+
+    for (let pos = 0; pos < size && (y - 5) < H; pos++) {
+      let pick = null;
+      for (let j = i; j < arr.length; j++) {
+        const c = arr[j];
+        const cj = (typeof c.set_index === 'number') ? c.set_index : -1;
+        const pj = (typeof c.set_pos === 'number') ? c.set_pos : -1;
+        if (cj === si && pj === pos) { pick = c; break; }
+      }
+      if (!pick) continue;
+      drawFutureRow(pick, y, textW, font);
+      if (si === curSetIdx && pos === curSetPos) { blueTop = y - 5; blueBot = y + 1; }
+      y += LHTT;
     }
+    // y is the next baseline; the block's last visual row ends at y - 5
+    drawSetSidebar(blockTop, y - 5, reps, blueTop, blueBot, markSet, markCur);
+  }
+}
 
-    if (y >= H) break;
-    shown++;
+/* one upcoming row (pace line, or a rest which keeps plain M:SS) */
+function drawFutureRow(o, y, maxW, font) {
+  const pace = o.pace100s || 0, dur = o.durSec || 0, note = o.note || '';
+  if (pace > 0) {
+    const meters = dur > 0 ? Math.floor((dur * 100) / pace) : 0;
+    drawPaceLineGFX(y, meters, pace, note, maxW, LIST_COLOR, font);
+  } else {
+    printGFX(0, y, fitGFX('rest ' + fmtMMSS(dur) + ' ' + note, font, maxW), LIST_COLOR, font);
+  }
+}
+
+/* Sidebar for one set block: dark pixel at each end so adjacent sets never
+   merge, divided into one segment per repetition (1px gaps), solid if they
+   cannot fit. Rows in [blueTop, blueBot) mark the exercise running now. */
+function drawSetSidebar(top, bottom, reps, blueTop, blueBot, colSet, colCurrent) {
+  const x = W - 1;
+  const lo = top + 1, hi = bottom - 1;
+  const h = hi - lo;
+  if (h <= 0) return;
+  if (reps < 1) reps = 1;
+  const put = (yy) => {
+    if (yy < 0 || yy >= H) return;
+    px(x, yy, (yy >= blueTop && yy < blueBot) ? colCurrent : colSet);
+  };
+  if (2 * reps - 1 <= h) {
+    const g = 1;
+    for (let k = 0; k < reps; k++) {
+      let ys = lo + Math.trunc((k * (h + g)) / reps);
+      let ye = lo + Math.trunc(((k + 1) * (h + g)) / reps) - g - 1;
+      if (ye < ys) ye = ys;
+      for (let yy = ys; yy <= ye && yy < hi; yy++) put(yy);
+    }
+  } else {
+    for (let yy = lo; yy < hi; yy++) put(yy);
   }
 }
 
@@ -410,11 +424,16 @@ function buildMock(nSets) {
   for (let s = 0; s < nSets; s++) {
     const spec = specs[s % specs.length];
     for (let rep = 1; rep <= spec.reps; rep++) {
+      let pos = 0;
       for (const sw of spec.swims) {
-        steps.push({ ...sw, set_index: s, set_rep: rep, set_reps: spec.reps });
+        steps.push({ ...sw, set_index: s, set_rep: rep, set_reps: spec.reps,
+                     set_size: spec.swims.length, set_pos: pos++ });
       }
     }
-    if (s === 0) steps.push({ pace100s: 90, durSec: 60, note: 'easy 100' });  // plain between sets
+    // Separator only after the first set (and only when there are 3+), so the
+    // last two sets are always back-to-back — that adjacency is what the dark
+    // pixel at the bottom/top of neighbouring sidebars is for.
+    if (s === 0 && nSets >= 3) steps.push({ pace100s: 90, durSec: 60, note: 'easy 100' });
   }
   // Long sections (>10 min) exercise the wider M:SS strings and big metre counts.
   steps.push({ pace100s: 105, durSec: 780, note: 'long steady' });  // 13:00

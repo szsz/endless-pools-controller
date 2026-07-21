@@ -197,15 +197,18 @@ void setupHUB75() {
 // horizontal bars (1 = top, 2 = top+middle, 3 = top+middle+bottom) followed by
 // the two seconds digits, saving a character of width on the panel.
 // `top` is the glyph's top row; returns the x advance (bar width + 1px gap).
-static int drawPaceMinuteGlyph(int x, int top, int mins, int gw, int gh, uint16_t color)
+// The bars are narrower than the cell and sit flush right, so they read as one
+// unit with the seconds digits that follow.
+static int drawPaceMinuteGlyph(int x, int top, int mins, int gw, int gh, int advance, uint16_t color)
 {
+  const int x0 = x + advance - gw - 1;      // flush right, 1px clear of the seconds
   auto bar = [&](int yy) {
-    for (int i = 0; i < gw; ++i) dma_display->drawPixel(x + i, yy, color);
+    for (int i = 0; i < gw; ++i) dma_display->drawPixel(x0 + i, yy, color);
   };
   bar(top);
   if (mins >= 2) bar(top + (gh - 1) / 2);
   if (mins >= 3) bar(top + gh - 1);
-  return gw + 1;
+  return advance;
 }
 
 // Width of a string in whatever font is currently selected.
@@ -222,6 +225,40 @@ static String fmtMMSSs(long secs)
   char buf[12];
   snprintf(buf, sizeof buf, "%ld:%02ld", secs / 60, secs % 60);
   return String(buf);
+}
+
+// Right-edge sidebar for one set block, spanning [top, bottom) minus one dark
+// pixel at each end so two adjacent sets never merge into a single bar. It is
+// divided into `reps` segments (1px gaps) to show how many repetitions the set
+// has; if that many segments cannot fit, a solid bar is drawn instead. Rows in
+// [blueTop, blueBot) use the "current" colour to mark the exercise running now.
+static void drawSetSidebar(int top, int bottom, int reps,
+                           int blueTop, int blueBot,
+                           uint16_t colSet, uint16_t colCurrent)
+{
+  const int x = PANEL_WIDTH - 1;
+  const int lo = top + 1, hi = bottom - 1;      // dark pixel top and bottom
+  const int h = hi - lo;
+  if (h <= 0) return;
+  if (reps < 1) reps = 1;
+
+  auto put = [&](int yy) {
+    if (yy < 0 || yy >= PANEL_HEIGHT) return;
+    const bool blue = (yy >= blueTop && yy < blueBot);
+    dma_display->drawPixel(x, yy, blue ? colCurrent : colSet);
+  };
+
+  if (2 * reps - 1 <= h) {                      // segments fit: one per repetition
+    const int g = 1;
+    for (int k = 0; k < reps; ++k) {
+      int ys = lo + (k * (h + g)) / reps;
+      int ye = lo + ((k + 1) * (h + g)) / reps - g - 1;
+      if (ye < ys) ye = ys;
+      for (int yy = ys; yy <= ye && yy < hi; ++yy) put(yy);
+    }
+  } else {                                      // too many to show individually
+    for (int yy = lo; yy < hi; ++yy) put(yy);
+  }
 }
 
 // One upcoming-swim line in TomThumb: "<meters>m <paceglyph><SS> <note>", with
@@ -252,7 +289,7 @@ static void drawTomThumbPaceLine(int baseline, long meters, long pace,
   cx = dma_display->getCursorX();
 
   if (useGlyph) {
-    drawPaceMinuteGlyph(cx, baseline - 5, mins, 3, 5, color);  // TomThumb glyphs are 5px tall
+    drawPaceMinuteGlyph(cx, baseline - 5, mins, 2, 5, 4, color);  // 2px bars, flush right
     cx += glyphAdv;
     dma_display->setCursor(cx, baseline);
     dma_display->print(secsStr);
@@ -263,6 +300,89 @@ static void drawTomThumbPaceLine(int baseline, long meters, long pace,
   cx = dma_display->getCursorX();
   dma_display->setCursor(cx, baseline);
   dma_display->print(tail);
+}
+
+
+// The upcoming list, shared by both panel modes. The swim in progress is simply
+// its first row (marked blue on the right edge) rather than a separate heading,
+// which keeps every row the same height and lets the list fill the panel.
+// A set is listed once as a block of `set_size` rows in canonical order.
+static void drawUpcomingList(JsonArray arr, int startY,
+                             int curSetIdx, int curSetPos,
+                             uint16_t listCol, uint16_t markSet, uint16_t markCur)
+{
+  if (arr.isNull() || arr.size() == 0) return;
+
+  dma_display->setFont(&TomThumb);
+  dma_display->setTextSize(1);
+  const int LHTT  = 6;
+  const int textW = PANEL_WIDTH - 2;      // last column belongs to the sidebar
+  int y = startY + 5;                     // TomThumb cursor y is the baseline
+  bool setDone[24] = {false};
+
+  auto drawRow = [&](JsonObject o, int baseline) {
+    long pace = o["pace100s"] | 0;
+    long dur  = o["durSec"] | 0;
+    const char *note = o["note"] | "";
+    if (pace > 0) {
+      long meters = (dur > 0) ? (long)((dur * 100) / pace) : 0;
+      drawTomThumbPaceLine(baseline, meters, pace, String(note), textW, listCol);
+    } else {
+      dma_display->setTextColor(listCol);
+      String line = String("rest ") + fmtMMSSs(dur) + " " + String(note);
+      int16_t bx, by; uint16_t bw, bh;
+      dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);
+      while (bw > textW && line.length() > 1) {
+        line.remove(line.length() - 1);
+        dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);
+      }
+      dma_display->setCursor(0, baseline);
+      dma_display->print(line);
+    }
+  };
+
+  for (size_t i = 0; i < arr.size() && (y - 5) < PANEL_HEIGHT; ++i) {
+    JsonObject o = arr[i];
+    const int si = o["set_index"].is<int>() ? o["set_index"].as<int>() : -1;
+
+    if (si < 0) {                          // plain swim: one row
+      drawRow(o, y);
+      if (i == 0) {                        // the swim actually in progress
+        for (int yy = y - 5; yy < y + 1 && yy < PANEL_HEIGHT; ++yy) {
+          if (yy >= 0) dma_display->drawPixel(PANEL_WIDTH - 1, yy, markCur);
+        }
+      }
+      y += LHTT;
+      continue;
+    }
+
+    if (si < 24 && setDone[si]) continue;  // this set was already listed
+    if (si < 24) setDone[si] = true;
+
+    const int size = o["set_size"] | 1;
+    const int reps = o["set_reps"] | 1;
+    const int blockTop = y - 5;
+    int blueTop = -1, blueBot = -1;
+
+    for (int pos = 0; pos < size && (y - 5) < PANEL_HEIGHT; ++pos) {
+      JsonObject pick; bool found = false;
+      for (size_t j = i; j < arr.size(); ++j) {
+        JsonObject c = arr[j];
+        const int cj = c["set_index"].is<int>() ? c["set_index"].as<int>() : -1;
+        const int pj = c["set_pos"].is<int>()   ? c["set_pos"].as<int>()   : -1;
+        if (cj == si && pj == pos) { pick = c; found = true; break; }
+      }
+      if (!found) continue;
+      drawRow(pick, y);
+      if (si == curSetIdx && pos == curSetPos) { blueTop = y - 5; blueBot = y + 1; }
+      y += LHTT;
+    }
+    // y is the next baseline; this block's last visual row ends at y - 5
+    drawSetSidebar(blockTop, y - 5, reps, blueTop, blueBot, markSet, markCur);
+  }
+
+  dma_display->setFont(nullptr);
+  dma_display->setTextSize(1);
 }
 
 void printJSon(DynamicJsonDocument doc)
@@ -349,13 +469,18 @@ void printJSon(DynamicJsonDocument doc)
   // - Rest (pace == 0): DARK_ORANGE if not paused, RED if paused
   ColorRGB firstColor = (pace100s > 0) ? GREEN : (paused ? RED : DARK_ORANGE);
 
+  // Shared by both modes.
+  const ColorRGB BAR_IDLE{255, 140, 0};        // progress-bar segment, not current
+  const ColorRGB MARK_CURRENT{40, 120, 255};   // blue: the swim in progress
+  const ColorRGB MARK_SET{25, 200, 25};        // green: belongs to a set
+  const ColorRGB LIST_COLOR{205, 133, 63};     // upcoming rows
+  const int curSetIdx = doc["set_index"].is<int>() ? doc["set_index"].as<int>() : -1;
+  const int curSetPos = doc["set_pos"].is<int>() ? doc["set_pos"].as<int>() : -1;
+
   // ================= Mode 1: big countdown =================
-  // Large remaining meters + time for the current swim, that swim's name
-  // underneath, and only the next two swims along the bottom.
+  // Large remaining meters + time for the current swim, then the upcoming list
+  // filling the rest of the panel (the current swim is its first row).
   if (s_panel_mode == 1) {
-    // One colour for both upcoming lines: the brighter of the old pair. The
-    // darker shade was hard to read on the panel.
-    const ColorRGB NEXT{205, 133, 63};
     const uint8_t bigSize  = 2;
     const int bigCharW = 6 * (int)bigSize;   // 12 px per char
     const int bigLineH = 8 * (int)bigSize;   // 16 px per line
@@ -376,62 +501,10 @@ void printJSon(DynamicJsonDocument doc)
     dma_display->setCursor((PANEL_WIDTH - wTime) / 2, bigLineH);
     dma_display->print(timeStr);
 
-    // Name of the current swim, centred under the countdown
-    dma_display->setTextSize(1);
-    String name = curNote;
-    while ((int)name.length() * 6 > PANEL_WIDTH && name.length() > 1) {
-      name.remove(name.length() - 1);
-    }
-    dma_display->setCursor((PANEL_WIDTH - (int)name.length() * 6) / 2, 2 * bigLineH + 2);
-    dma_display->print(name);
-
-    // Bottom: next two swims only, one TomThumb line each (cursor y = baseline)
-    dma_display->setFont(&TomThumb);
-    dma_display->setTextSize(1);
-    const int baselines[2] = { PANEL_HEIGHT - 8, PANEL_HEIGHT - 2 };
-    int drawn = 0;
-    if (!arr.isNull()) {
-      // Same rule as the classic list: show a set's swims once, not once per
-      // repetition. Seeded from the current step so its own set collapses too.
-      JsonObject cur0 = arr[0];
-      int seenSetIdx = cur0["set_index"].is<int>() ? cur0["set_index"].as<int>() : -1;
-      int seenSetRep = cur0["set_rep"].is<int>()   ? cur0["set_rep"].as<int>()   : -1;
-      for (size_t i = 1; i < arr.size() && drawn < 2; ++i) {
-        JsonObject o = arr[i];
-        long p = o["pace100s"] | 0;
-        long dsec = o["durSec"] | 0;
-        const char *nt = o["note"] | "";
-
-        const int si = o["set_index"].is<int>() ? o["set_index"].as<int>() : -1;
-        const int sr = o["set_rep"].is<int>()   ? o["set_rep"].as<int>()   : -1;
-        if (si >= 0) {
-          if (si == seenSetIdx && sr != seenSetRep) continue;   // later repetition
-          if (si != seenSetIdx) { seenSetIdx = si; seenSetRep = sr; }
-        }
-
-        String line;
-        if (p > 0) {
-          long m = (dsec > 0) ? (long)((dsec * 100) / p) : 0;
-          line = String(m) + "m " + fmtMMSS(p) + " " + String(nt);
-        } else {
-          line = String("rest ") + fmtMMSS(dsec) + " " + String(nt);
-        }
-
-        int16_t bx, by; uint16_t bw, bh;
-        dma_display->getTextBounds(line.c_str(), 0, baselines[drawn], &bx, &by, &bw, &bh);
-        while (bw > PANEL_WIDTH && line.length() > 1) {
-          line.remove(line.length() - 1);
-          dma_display->getTextBounds(line.c_str(), 0, baselines[drawn], &bx, &by, &bw, &bh);
-        }
-        dma_display->setTextColor(color565(NEXT));
-        dma_display->setCursor(0, baselines[drawn]);
-        dma_display->print(line);
-        drawn++;
-      }
-    }
-
-    dma_display->setFont(nullptr);
-    dma_display->setTextSize(1);
+    // The list fills the rest of the panel. The swim in progress is simply its
+    // first row, so its name appears there instead of as a separate heading.
+    drawUpcomingList(arr, 2 * bigLineH + 2, curSetIdx, curSetPos,
+                     color565(LIST_COLOR), color565(MARK_SET), color565(MARK_CURRENT));
     return;
   }
 
@@ -464,11 +537,7 @@ void printJSon(DynamicJsonDocument doc)
   // ---- progress bar: one dashed segment per set, spanning the full width ----
   // Sits between the counters and the list. The segment for the set we are
   // currently in is blue, the rest orange.
-  const ColorRGB BAR_IDLE{255, 140, 0};    // orange
-  const ColorRGB MARK_CURRENT{40, 120, 255}; // blue
-  const ColorRGB MARK_SET{25, 200, 25};      // green
   const int setCount = doc["set_count"] | 0;
-  const int curSetIdx = doc["set_index"].is<int>() ? doc["set_index"].as<int>() : -1;
   const bool inSet = (curSetIdx >= 0 && setCount > 0);
 
   const int barY = counterH + 1;             // 2px tall bar just under the counters
@@ -514,128 +583,8 @@ void printJSon(DynamicJsonDocument doc)
   const int LHTT = 6;                   // ~6 px line height for TomThumb
 
   // Start list under the counters (account for stacked counters if needed)
-  int y = listStartY;
-
-  // Remaining list: up to first 5 items, each item uses two lines
-  // start list under top margin
-  // Single colour for the upcoming items — the brighter of the two shades that
-  // used to alternate, because the darker rows were hard to read.
-  const ColorRGB LIST_COLOR{205, 133, 63};
-
-  if (!arr.isNull()) {
-    size_t shown = 0;
-    // A set is stored unrolled (its swims repeat N times), but the panel lists
-    // each of a set's swims only once: after the first repetition we meet, any
-    // later repetition of that same set is skipped.
-    int seenSetIdx = -1, seenSetRep = -1;
-    for (size_t i = 0; i < arr.size() && shown < 9; ++i) { // include current item
-      JsonObject obj = arr[i];
-      long pace = obj["pace100s"] | 0;
-      long dur = obj["durSec"] | 0;
-      const char* note = obj["note"] | "";
-
-      const int si = obj["set_index"].is<int>() ? obj["set_index"].as<int>() : -1;
-      const int sr = obj["set_rep"].is<int>()   ? obj["set_rep"].as<int>()   : -1;
-      if (si >= 0) {
-        if (si == seenSetIdx && sr != seenSetRep) continue;   // later repetition
-        if (si != seenSetIdx) { seenSetIdx = si; seenSetRep = sr; }
-      }
-
-      // If the very first item is rest (pace == 0), skip drawing it (only show the counter)
-      if (i == 0 && pace == 0) {
-        y+=5; //other font is centered idfferetnly
-        continue;
-      }
-
-      const int rowStart = y;   // remembered so the right-edge marker can span this item
-
-      if (i == 0) {
-        // First visible item (swim): color matches counters; two lines
-        dma_display->setFont(nullptr);
-        dma_display->setTextSize(1);
-        dma_display->setTextColor(color565(firstColor));
-
-        long meters = (dur > 0) ? (long)((dur * 100) / pace) : 0;
-        String line2 = String(note);
-
-        int16_t bx, by; uint16_t bw, bh;
-        /*dma_display->getTextBounds(line1.c_str(), 0, y, &bx, &by, &bw, &bh);
-        while (bw > PANEL_WIDTH && line1.length() > 1) {
-          line1.remove(line1.length() - 1);
-          dma_display->getTextBounds(line1.c_str(), 0, y, &bx, &by, &bw, &bh);
-        }*/
-        // "<meters>m " then the compact pace glyph + seconds (built-in font is
-        // 6x8, so the glyph is 5 wide / 7 tall and advances 6).
-        String pre1 = String(meters) + "m ";
-        const int pmins = (int)(pace / 60), psecs = (int)(pace % 60);
-        dma_display->setCursor(0, y);
-        dma_display->print(pre1);
-        int cx1 = dma_display->getCursorX();
-        if (pmins >= 1 && pmins <= 3) {
-          drawPaceMinuteGlyph(cx1, y, pmins, 5, 7, color565(firstColor));
-          cx1 += 6;
-          char sb1[4]; snprintf(sb1, sizeof sb1, "%02d", psecs);
-          dma_display->setCursor(cx1, y);
-          dma_display->print(sb1);
-        } else {
-          dma_display->setCursor(cx1, y);
-          dma_display->print(fmtMMSSs(pace));
-        }
-        y += LH6;
-
-       /*dma_display->getTextBounds(line2.c_str(), 0, y, &bx, &by, &bw, &bh);
-        while (bw > PANEL_WIDTH && line2.length() > 1) {
-          line2.remove(line2.length() - 1);
-          dma_display->getTextBounds(line2.c_str(), 0, y, &bx, &by, &bw, &bh);
-        }*/
-        dma_display->setCursor(0, y);
-        dma_display->print(line2);
-        y += (LH6);
-        y+=5; //other font is centered idfferetnly
-      } else {
-        // Rest of items: smaller (TomThumb) and in one line
-        dma_display->setFont(&TomThumb);
-        dma_display->setTextSize(1);
-        dma_display->setTextColor(color565(LIST_COLOR));
-
-        // Leave the last column free for the set / current-swim marker.
-        const int textW = PANEL_WIDTH - 2;
-        if (pace > 0) {
-          long meters = (dur > 0) ? (long)((dur * 100) / pace) : 0;
-          drawTomThumbPaceLine(y, meters, pace, String(note), textW, color565(LIST_COLOR));
-        } else {
-          // A rest shows its duration, not a pace, so it keeps plain M:SS.
-          String line = String("rest ") + fmtMMSS(dur) + " " + String(note);
-          int16_t bx, by; uint16_t bw, bh;
-          dma_display->getTextBounds(line.c_str(), 0, y, &bx, &by, &bw, &bh);
-          while (bw > textW && line.length() > 1) {
-            line.remove(line.length() - 1);
-            dma_display->getTextBounds(line.c_str(), 0, y, &bx, &by, &bw, &bh);
-          }
-          dma_display->setCursor(0, y);
-          dma_display->print(line);
-        }
-        y += (LHTT);
-      }
-
-      // Right-edge marker: blue beside the current swim, green beside any step
-      // that belongs to a set. The built-in font draws downward from the cursor
-      // while TomThumb draws upward from its baseline, so the marked rows are
-      // computed per font or the mark ends up offset from its text.
-      if (i == 0 || si >= 0) {
-        int markTop, markBot;                 // [markTop, markBot)
-        if (i == 0) { markTop = rowStart; markBot = rowStart + 2 * LH6; }
-        else        { markTop = rowStart - 5; markBot = rowStart + 1; }
-        uint16_t mc = color565(i == 0 ? MARK_CURRENT : MARK_SET);
-        for (int yy = markTop; yy < markBot && yy < PANEL_HEIGHT; ++yy) {
-          if (yy >= 0) dma_display->drawPixel(PANEL_WIDTH - 1, yy, mc);
-        }
-      }
-
-      if (y >= PANEL_HEIGHT) break;
-      shown++;
-    }
-  }
+  drawUpcomingList(arr, listStartY, curSetIdx, curSetPos,
+                   color565(LIST_COLOR), color565(MARK_SET), color565(MARK_CURRENT));
 
   // Restore default font for any later rendering
   dma_display->setFont(nullptr);

@@ -170,6 +170,7 @@ void WorkoutManager::push_status_()
       doc["set_index"] = cur.setIndex;   // 0-based set number within the workout
       doc["set_rep"]   = cur.setRep;     // 1-based repetition ("2" of "2/3")
       doc["set_reps"]  = cur.setReps;    // total repetitions ("3" of "2/3")
+      doc["set_pos"]   = cur.setPos;     // which exercise of the set is running
     }
   }
 
@@ -188,6 +189,8 @@ void WorkoutManager::push_status_()
         swim["set_index"] = fs.setIndex;   // which set this step belongs to
         swim["set_rep"]  = fs.setRep;
         swim["set_reps"] = fs.setReps;
+        swim["set_size"] = fs.setSize;     // exercises per repetition
+        swim["set_pos"]  = fs.setPos;      // position within one repetition
       }
     }
 

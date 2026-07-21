@@ -34,6 +34,8 @@ struct FlatStep {
   int16_t  setIndex = -1;   // -1 = not in a set; else 0-based index among the workout's sets
   uint16_t setRep   = 0;    // 1-based repetition within its set
   uint16_t setReps  = 0;    // total repetitions of its set
+  uint16_t setSize  = 0;    // number of distinct swims in its set (one repetition)
+  uint16_t setPos   = 0;    // 0-based position of this swim within one repetition
 };
 
 namespace WorkoutStorage {

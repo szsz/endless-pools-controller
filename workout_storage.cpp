@@ -118,12 +118,15 @@ std::vector<FlatStep> WorkoutStorage::flatten(const Workout &w) {
       ++setIdx;
       uint16_t reps = it.repeat < 1 ? 1 : it.repeat;
       for (uint16_t r = 1; r <= reps; ++r) {
+        uint16_t pos = 0;
         for (const auto &s : it.swims) {
           FlatStep fs;
           fs.swim = s;
           fs.setIndex = setIdx;
           fs.setRep   = r;
           fs.setReps  = reps;
+          fs.setSize  = (uint16_t)it.swims.size();
+          fs.setPos   = pos++;
           out.push_back(fs);
         }
       }
