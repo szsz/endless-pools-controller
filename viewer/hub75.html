@@ -89,6 +89,7 @@
 </div>
 
 <script src="hub75-fonts.js"></script>
+<script src="hub75-panel-font.js"></script>
 <script>
 /* ============================================================
    Minimal Adafruit_GFX-compatible renderer on a 64x64 framebuffer.
@@ -174,7 +175,7 @@ function drawPaceGlyph(x, top, mins, gw, gh, advance, color) {
   if (mins >= 3) bar(top + gh - 1);
   return advance;
 }
-function drawPaceLineGFX(baseline, meters, pace, note, maxW, color, font) {
+function drawPaceLineGFX(baseline, meters, pace, note, maxW, metricCol, noteCol, font) {
   const mins = Math.floor(pace / 60), secs = pace % 60;
   const useGlyph = mins >= 1 && mins <= 3;
   const pre = meters + 'm';
@@ -185,15 +186,15 @@ function drawPaceLineGFX(baseline, meters, pace, note, maxW, color, font) {
                                                 : widthGFX(fmtMMSS(pace), font));
   while (fixed + widthGFX(tail, font) > maxW && tail.length > 0) tail = tail.slice(0, -1);
   let cx = 0;
-  for (const ch of pre) cx += drawCharGFX(cx, baseline, ch, color, font);
+  for (const ch of pre) cx += drawCharGFX(cx, baseline, ch, metricCol, font);
   if (useGlyph) {
-    drawPaceGlyph(cx, baseline - 5, mins, 2, 5, 4, color);
+    drawPaceGlyph(cx, baseline - 5, mins, 2, 5, 4, metricCol);
     cx += glyphAdv;
-    for (const ch of secsStr) cx += drawCharGFX(cx, baseline, ch, color, font);
+    for (const ch of secsStr) cx += drawCharGFX(cx, baseline, ch, metricCol, font);
   } else {
-    for (const ch of fmtMMSS(pace)) cx += drawCharGFX(cx, baseline, ch, color, font);
+    for (const ch of fmtMMSS(pace)) cx += drawCharGFX(cx, baseline, ch, metricCol, font);
   }
-  for (const ch of tail) cx += drawCharGFX(cx, baseline, ch, color, font);
+  for (const ch of tail) cx += drawCharGFX(cx, baseline, ch, noteCol, font);
 }
 function drawPaceLineBuiltin(y, meters, pace, color) {
   const mins = Math.floor(pace / 60), secs = pace % 60;
@@ -219,7 +220,7 @@ const fmtMMSS = (secs) => {
    Renderers — 1:1 with hub75.cpp printJSon()
    ============================================================ */
 function render(doc, mode) {
-  const TT = window.TOMTHUMB;
+  const TT = window.PANEL_FONT || window.TOMTHUMB;   // panel list font
   clearScreen();
 
   const paused = !!doc.paused;
@@ -320,11 +321,8 @@ function drawUpcomingList(arr, startY, curSetIdx, curSetPos, listCol, markSet, m
     const o = arr[i];
     const si = (typeof o.set_index === 'number') ? o.set_index : -1;
 
-    if (si < 0) {
-      drawFutureRow(o, y, textW, font);
-      if (i === 0) {
-        for (let yy = y - 5; yy < y + 1 && yy < H; yy++) if (yy >= 0) px(W - 1, yy, markCur);
-      }
+    if (si < 0) {                       // plain swim: one row, no sidebar
+      drawFutureRow(o, y, textW, font, i === 0);
       y += LHTT;
       continue;
     }
@@ -345,8 +343,9 @@ function drawUpcomingList(arr, startY, curSetIdx, curSetPos, listCol, markSet, m
         if (cj === si && pj === pos) { pick = c; break; }
       }
       if (!pick) continue;
-      drawFutureRow(pick, y, textW, font);
-      if (si === curSetIdx && pos === curSetPos) { blueTop = y - 5; blueBot = y + 1; }
+      const isCurrent = (si === curSetIdx && pos === curSetPos);
+      drawFutureRow(pick, y, textW, font, isCurrent);
+      if (isCurrent) { blueTop = y - 5; blueBot = y + 1; }
       y += LHTT;
     }
     // y is the next baseline; the block's last visual row ends at y - 5
@@ -355,16 +354,23 @@ function drawUpcomingList(arr, startY, curSetIdx, curSetPos, listCol, markSet, m
 }
 
 /* one upcoming row (pace line, or a rest which keeps plain M:SS) */
-function drawFutureRow(o, y, maxW, font) {
+function drawFutureRow(o, y, maxW, font, isCurrent) {
   const pace = o.pace100s || 0, dur = o.durSec || 0;
   // a set's swims are often unnamed: fall back to the set's own name
   let note = o.note || o.set_name || '';
   if (CAPS) note = note.toUpperCase();
+  const metricCol = isCurrent ? MARK_CURRENT : LIST_COLOR;
   if (pace > 0) {
     const meters = dur > 0 ? Math.floor((dur * 100) / pace) : 0;
-    drawPaceLineGFX(y, meters, pace, note, maxW, LIST_COLOR, font);
+    drawPaceLineGFX(y, meters, pace, note, maxW, metricCol, LIST_COLOR, font);
   } else {
-    printGFX(0, y, fitGFX('rest ' + fmtMMSS(dur) + ' ' + note, font, maxW), LIST_COLOR, font);
+    // "rest <duration>" takes the current colour; the note does not
+    const head = 'rest ' + fmtMMSS(dur);
+    let cx = 0;
+    for (const ch of head) cx += drawCharGFX(cx, y, ch, metricCol, font);
+    let tail = ' ' + note;
+    while (cx + widthGFX(tail, font) > maxW && tail.length > 0) tail = tail.slice(0, -1);
+    for (const ch of tail) cx += drawCharGFX(cx, y, ch, LIST_COLOR, font);
   }
 }
 
@@ -471,11 +477,13 @@ function statusDoc() {
     remaining_swims: STEPS.slice(idx).map(s => ({
       pace100s: s.pace100s, durSec: s.durSec, note: s.note,
       ...(typeof s.set_index === 'number'
-            ? { set_index: s.set_index, set_rep: s.set_rep, set_reps: s.set_reps } : {})
+            ? { set_index: s.set_index, set_rep: s.set_rep, set_reps: s.set_reps,
+                set_size: s.set_size, set_pos: s.set_pos, set_name: s.set_name } : {})
     }))
   };
   if (typeof cur.set_index === 'number') {
-    d.set_index = cur.set_index; d.set_rep = cur.set_rep; d.set_reps = cur.set_reps;
+    d.set_index = cur.set_index; d.set_rep = cur.set_rep;
+    d.set_reps = cur.set_reps; d.set_pos = cur.set_pos;
   }
   return d;
 }

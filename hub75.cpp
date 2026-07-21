@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 #include <ESP32-HUB75-MatrixPanel-I2S-DMA.h>
 #include <Fonts/TomThumb.h>
+#include "fonts/Panel3x5.h"
 #include "hub75.h"
 
 /*************** HUB75 Panel Config ***************/
@@ -278,9 +279,10 @@ static void drawSetSidebar(int top, int bottom, int reps, bool segmented,
 // the note truncated to fit maxW. Falls back to plain M:SS when the pace is
 // outside the 1..3 minute range the glyphs can express.
 static void drawTomThumbPaceLine(int baseline, long meters, long pace,
-                                 const String &note, int maxW, uint16_t color)
+                                 const String &note, int maxW,
+                                 uint16_t metricCol, uint16_t noteCol)
 {
-  dma_display->setTextColor(color);
+  dma_display->setTextColor(metricCol);
   const int mins = (int)(pace / 60), secs = (int)(pace % 60);
   const bool useGlyph = (mins >= 1 && mins <= 3);
 
@@ -302,7 +304,7 @@ static void drawTomThumbPaceLine(int baseline, long meters, long pace,
   cx = dma_display->getCursorX();
 
   if (useGlyph) {
-    drawPaceMinuteGlyph(cx, baseline - 5, mins, 2, 5, 4, color);  // 2px bars, flush right
+    drawPaceMinuteGlyph(cx, baseline - 5, mins, 2, 5, 4, metricCol);  // 2px bars, flush right
     cx += glyphAdv;
     dma_display->setCursor(cx, baseline);
     dma_display->print(secsStr);
@@ -311,6 +313,7 @@ static void drawTomThumbPaceLine(int baseline, long meters, long pace,
     dma_display->print(fmtMMSSs(pace));
   }
   cx = dma_display->getCursorX();
+  dma_display->setTextColor(noteCol);
   dma_display->setCursor(cx, baseline);
   dma_display->print(tail);
 }
@@ -326,14 +329,14 @@ static void drawUpcomingList(JsonArray arr, int startY,
 {
   if (arr.isNull() || arr.size() == 0) return;
 
-  dma_display->setFont(&TomThumb);
+  dma_display->setFont(&Panel3x5);
   dma_display->setTextSize(1);
   const int LHTT  = 6;
   const int textW = PANEL_WIDTH - 2;      // last column belongs to the sidebar
   int y = startY + 5;                     // TomThumb cursor y is the baseline
   bool setDone[24] = {false};
 
-  auto drawRow = [&](JsonObject o, int baseline) {
+  auto drawRow = [&](JsonObject o, int baseline, bool isCurrent) {
     long pace = o["pace100s"] | 0;
     long dur  = o["durSec"] | 0;
     const char *note = o["note"] | "";
@@ -344,18 +347,27 @@ static void drawUpcomingList(JsonArray arr, int startY,
     if (s_caps) noteStr.toUpperCase();
     if (pace > 0) {
       long meters = (dur > 0) ? (long)((dur * 100) / pace) : 0;
-      drawTomThumbPaceLine(baseline, meters, pace, noteStr, textW, listCol);
+      // The swim in progress shows its length and pace in the "current" colour.
+      drawTomThumbPaceLine(baseline, meters, pace, noteStr, textW,
+                           isCurrent ? markCur : listCol, listCol);
     } else {
-      dma_display->setTextColor(listCol);
-      String line = String("rest ") + fmtMMSSs(dur) + " " + noteStr;
+      // A rest: "rest <duration>" takes the current colour, the note does not.
+      String head = String("rest ") + fmtMMSSs(dur);
+      String line = head + " " + noteStr;
       int16_t bx, by; uint16_t bw, bh;
       dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);
       while (bw > textW && line.length() > 1) {
         line.remove(line.length() - 1);
         dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);
       }
+      // draw the head and the note separately so they can differ in colour
+      String shownNote = (line.length() > head.length()) ? line.substring(head.length()) : String();
+      dma_display->setTextColor(isCurrent ? markCur : listCol);
       dma_display->setCursor(0, baseline);
-      dma_display->print(line);
+      dma_display->print(head);
+      dma_display->setTextColor(listCol);
+      dma_display->setCursor(dma_display->getCursorX(), baseline);
+      dma_display->print(shownNote);
     }
   };
 
@@ -363,13 +375,8 @@ static void drawUpcomingList(JsonArray arr, int startY,
     JsonObject o = arr[i];
     const int si = o["set_index"].is<int>() ? o["set_index"].as<int>() : -1;
 
-    if (si < 0) {                          // plain swim: one row
-      drawRow(o, y);
-      if (i == 0) {                        // the swim actually in progress
-        for (int yy = y - 5; yy < y + 1 && yy < PANEL_HEIGHT; ++yy) {
-          if (yy >= 0) dma_display->drawPixel(PANEL_WIDTH - 1, yy, markCur);
-        }
-      }
+    if (si < 0) {                          // plain swim: one row, no sidebar
+      drawRow(o, y, i == 0);               // (the sidebar is a set marker only)
       y += LHTT;
       continue;
     }
@@ -391,8 +398,9 @@ static void drawUpcomingList(JsonArray arr, int startY,
         if (cj == si && pj == pos) { pick = c; found = true; break; }
       }
       if (!found) continue;
-      drawRow(pick, y);
-      if (si == curSetIdx && pos == curSetPos) { blueTop = y - 5; blueBot = y + 1; }
+      const bool isCurrent = (si == curSetIdx && pos == curSetPos);
+      drawRow(pick, y, isCurrent);
+      if (isCurrent) { blueTop = y - 5; blueBot = y + 1; }
       y += LHTT;
     }
     // y is the next baseline; this block's last visual row ends at y - 5.
