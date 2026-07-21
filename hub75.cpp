@@ -352,7 +352,7 @@ static void drawUpcomingList(JsonArray arr, int startY,
                            isCurrent ? markCur : listCol, listCol);
     } else {
       // A rest: "rest <duration>" takes the current colour, the note does not.
-      String head = String("rest ") + fmtMMSSs(dur);
+      String head = String("-- ") + fmtMMSSs(dur);   // a rest reads as "-- 0:20"
       String line = head + " " + noteStr;
       int16_t bx, by; uint16_t bw, bh;
       dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);

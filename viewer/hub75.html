@@ -367,7 +367,7 @@ function drawFutureRow(o, y, maxW, font, isCurrent) {
     drawPaceLineGFX(y, meters, pace, note, maxW, metricCol, LIST_COLOR, font);
   } else {
     // "rest <duration>" takes the current colour; the note does not
-    const head = 'rest ' + fmtMMSS(dur);
+    const head = '-- ' + fmtMMSS(dur);          // a rest reads as "-- 0:20"
     let cx = 0;
     for (const ch of head) cx += drawCharGFX(cx, y, ch, metricCol, font);
     let tail = ' ' + note;
