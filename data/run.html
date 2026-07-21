@@ -3,23 +3,31 @@
 
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0077cc" />
   <title>Workout Runner</title>
   <link rel="stylesheet" href="static/run.css" />
-</style>
 </head>
 
 <body>
   <main id="runner" role="main" aria-live="polite" aria-atomic="true">
-    <div id="runNote" aria-label="Current step note"></div>
-    <div id="runTime" aria-label="Time remaining">00:00</div>
-    <div id="runDist" aria-label="Distance remaining"></div>
-    <div id="runPace" aria-label="Current pace"></div>
-    <section id="queue" aria-label="Upcoming steps">
-      <div id="queueList"><em>Loading...</em></div>
-    </section>
-    <button id="pauseBtn" aria-pressed="false" aria-label="Pause or resume workout">⏸ Pause</button>
-    <button id="returnBtn" aria-label="Return to editor">⬅ Back to Editor</button>
+    <!-- scrollable stats area -->
+    <div id="runMain">
+      <div id="runSet" aria-label="Set progress" hidden></div>
+      <div id="runNote" aria-label="Current step note"></div>
+      <div id="runTime" aria-label="Time remaining">00:00</div>
+      <div id="runDist" aria-label="Distance remaining"></div>
+      <div id="runPace" aria-label="Current pace"></div>
+      <section id="queue" aria-label="Upcoming steps">
+        <div id="queueList"><em>Loading...</em></div>
+      </section>
+    </div>
+
+    <!-- controls stay pinned and always visible -->
+    <div id="runControls">
+      <button id="pauseBtn" aria-pressed="false" aria-label="Pause or resume workout">⏸ Pause</button>
+      <button id="returnBtn" aria-label="Return to editor">⬅ Back to Editor</button>
+    </div>
   </main>
 
   <script src="static/run.js"></script>

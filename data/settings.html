@@ -2,25 +2,47 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0077cc" />
   <title>Settings</title>
   <link rel="stylesheet" href="/static/style.css" />
   <style>
-    body { padding: 0.75rem; }
-    .row { display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0; }
-    .card { border: 1px solid #ccc; border-radius: 6px; padding: 1rem; margin: 0.5rem 0; background: #fafafa; }
+    body {
+      padding: calc(env(safe-area-inset-top, 0px) + 0.75rem)
+               calc(env(safe-area-inset-right, 0px) + 0.75rem)
+               calc(env(safe-area-inset-bottom, 0px) + 0.75rem)
+               calc(env(safe-area-inset-left, 0px) + 0.75rem);
+      max-width: 760px;
+      margin: 0 auto;
+    }
+    /* wrap instead of overflowing on a phone */
+    .row { display: flex; align-items: center; gap: 0.75rem; margin: 0.5rem 0; flex-wrap: wrap; }
+    .card { border: 1px solid #ccc; border-radius: 10px; padding: 1rem; margin: 0.5rem 0; background: #fafafa; }
     .muted { color: #666; font-size: 0.9rem; }
     .ok { color: #0a0; }
     .err { color: #a00; }
-    label.inline { display: inline-flex; align-items: center; gap: 0.5rem; }
+    label.inline { display: inline-flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; max-width: 100%; }
     input[type="text"], input[type="password"] { width: 18rem; max-width: 100%; }
+    input[type="text"], input[type="password"], input[type="number"] {
+      padding: 0.5rem 0.6rem; min-height: 44px; border: 1px solid #ccc; border-radius: 8px;
+    }
+    input[type="range"] { height: 2rem; flex: 1 1 10rem; min-width: 8rem; }
+    button, input[type="file"] { min-height: 44px; touch-action: manipulation; }
+    input[type="file"] { max-width: 100%; }
+    header.row a { min-height: 44px; display: inline-flex; align-items: center; }
     #msg { min-height: 1.2rem; }
+
+    @media (max-width: 520px) {
+      /* stack label/control pairs so nothing runs off the screen */
+      label.inline { width: 100%; }
+      input[type="text"], input[type="password"] { width: 100%; }
+    }
   </style>
 </head>
 <body>
   <header class="row">
     <h2 style="margin: 0;">Settings</h2>
-    <a href="/index.html" style="margin-left:auto;">Back to Editor</a>
+    <a href="/" style="margin-left:auto;">Back to Editor</a>
   </header>
 
   <section class="card">
@@ -33,6 +55,37 @@
       </label>
     </div>
     <p class="muted">Changes are applied immediately and persisted in LittleFS (/settings.json).</p>
+  </section>
+
+  <section class="card">
+    <h3 style="margin-top:0;">Swim Machine</h3>
+    <div class="row">
+      <label class="inline" for="dryRun">
+        <input id="dryRun" type="checkbox" style="transform:scale(1.4); margin-right:0.4rem;" />
+        <span><strong>Dry run</strong> — never control the swim machine</span>
+      </label>
+    </div>
+    <p class="muted">Workouts run normally (timers, display, run screen) but no commands
+      are sent to the machine, and a workout can start even when no machine is
+      detected. Use this to test without driving the pool.</p>
+    <div id="drMsg" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <h3 style="margin-top:0;">Display Mode</h3>
+    <div class="row">
+      <label class="inline" for="panelMode">
+        <span>LED panel layout</span>
+        <select id="panelMode">
+          <option value="0">Classic — counters + upcoming list</option>
+          <option value="1">Big — large countdown + next two</option>
+        </select>
+      </label>
+    </div>
+    <p class="muted"><strong>Big</strong> shows large remaining metres and time for the
+      current swim, its name underneath, and only the next two swims at the bottom.
+      Preview both layouts offline by opening <code>viewer/hub75.html</code> on your computer.</p>
+    <div id="pmMsg" aria-live="polite"></div>
   </section>
 
   <section class="card">
@@ -77,6 +130,44 @@
     const screensaverEl = $('#screensaver');
     const ssMsgEl = $('#ssMsg');
     const msgEl = $('#msg');
+    const dryRunEl = $('#dryRun');
+    const drMsgEl = $('#drMsg');
+    const panelModeEl = $('#panelMode');
+    const pmMsgEl = $('#pmMsg');
+
+    function flash(el, text, ok) {
+      el.textContent = text || '';
+      el.className = ok ? 'ok' : (text ? 'err' : '');
+      if (ok) setTimeout(() => { el.textContent = ''; el.className = ''; }, 1200);
+    }
+
+    // Generic patch helper for /api/settings
+    async function patchSettings(patch, msgEl, okText) {
+      try {
+        const res = await fetch('/api/settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch)
+        });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const j = await res.json();
+        flash(msgEl, okText, true);
+        return j;
+      } catch (e) {
+        console.error(e);
+        flash(msgEl, 'Failed to save: ' + e.message, false);
+        return null;
+      }
+    }
+
+    dryRunEl.addEventListener('change', (e) => {
+      patchSettings({ dry_run: !!e.target.checked }, drMsgEl,
+        e.target.checked ? 'Dry run ON — machine will not be controlled' : 'Dry run off');
+    });
+
+    panelModeEl.addEventListener('change', (e) => {
+      patchSettings({ panel_mode: parseInt(e.target.value, 10) }, pmMsgEl, 'Display mode saved');
+    });
 
     function setMsg(text, ok) {
       msgEl.textContent = text || '';
@@ -98,6 +189,8 @@
         brightnessValEl.textContent = b;
         const ss = (typeof j.screensaver_sec === 'number') ? j.screensaver_sec : 300;
         screensaverEl.value = Math.round(ss / 60);
+        dryRunEl.checked = j.dry_run === true;
+        panelModeEl.value = String(j.panel_mode === 1 ? 1 : 0);
       } catch (e) {
         console.error(e);
       }

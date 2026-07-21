@@ -8,13 +8,30 @@ const workoutId = params.get("id");
 
 const es = new EventSource("/events");
 
+// Escape user-supplied text before it goes anywhere near innerHTML.
+const esc = (t) => String(t == null ? "" : t).replace(/[&<>"']/g, (c) => (
+  { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+));
+
 es.addEventListener("status", (e) => {
-  const st = JSON.parse(e.data);
+  let st;
+  try { st = JSON.parse(e.data); } catch (_) { return; }
 
   pauseBtn.textContent = st.paused ? "▶ Resume" : "⏸ Pause";
   pauseBtn.setAttribute("aria-pressed", st.paused ? "true" : "false");
 
   document.title = st.workout_title || "Workout Runner";
+
+  // Set progress ("Set 2 / 3") — firmware sends these while inside a set.
+  const setEl = $("runSet");
+  if (setEl) {
+    if (st.set_reps > 1) {
+      setEl.textContent = `Set ${st.set_rep} / ${st.set_reps}`;
+      setEl.hidden = false;
+    } else {
+      setEl.hidden = true;
+    }
+  }
 
   let timeLeftMSecs = 0;
   if (st.remaining_swims && st.remaining_swims.length > 0) {
@@ -71,9 +88,10 @@ es.addEventListener("status", (e) => {
       const totalMin = Math.floor(s.durSec / 60);
       const totalSec = s.durSec % 60;
       const totalTime = `${totalMin}:${totalSec.toString().padStart(2, "0")}`;
-      const note = s.note || "";
+      const note = esc(s.note || "");
+      const inSet = s.set_reps > 1 ? ' class="in-set"' : "";
 
-      tableHtml += `<tr>
+      tableHtml += `<tr${inSet}>
         <td>${distance}</td>
         <td>${pace}</td>
         <td>${totalTime}</td>
@@ -87,16 +105,17 @@ es.addEventListener("status", (e) => {
     $("queueList").innerHTML = "<em>No upcoming steps</em>";
   }
 
-  // Show/hide Pause and Return buttons based on workout running status
+  // Show/hide Pause and Return buttons based on workout running status.
+  // "" (not block/inline-block) keeps them flex children of #runControls.
   if (!st.running) {
     pauseBtn.style.display = "none";
-    returnBtn.style.display = "block";
+    returnBtn.style.display = "";
   } else {
-    pauseBtn.style.display = "inline-block";
+    pauseBtn.style.display = "";
     returnBtn.style.display = "none";
   }
   if (st.paused) {
-    returnBtn.style.display = "block";
+    returnBtn.style.display = "";
   }
 });
 

@@ -1,70 +1,91 @@
-html,
-body {
+:root {
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+}
+
+html, body {
   height: 100%;
   width: 100%;
   margin: 0;
   padding: 0;
+  overflow: hidden;                 /* the inner stats area does the scrolling */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
 }
 
-body {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  min-height: 100vh;
-}
-
-/* Runner container fills width, centers content */
+/* Full-height column: stats scroll, controls stay pinned at the bottom. */
 #runner {
   box-sizing: border-box;
-  width: 100vw;      /* full viewport width */
-  height: 100vh;     /* full viewport height */
-  max-width: none;   /* remove max-width limitation */
+  width: 100%;
+  height: 100vh;                    /* fallback */
+  height: 100dvh;                   /* iOS: excludes dynamic browser chrome */
   display: flex;
   flex-direction: column;
-  justify-content: flex-start;
-  align-items: center;
-  padding: 1rem;
   background: #fff;
-  border-radius: 0;  /* optional: remove rounding */
-  box-shadow: none;  /* optional: remove shadow */
+  padding: calc(var(--safe-t) + 0.5rem) calc(var(--safe-r) + 0.75rem)
+           calc(var(--safe-b) + 0.5rem) calc(var(--safe-l) + 0.75rem);
 }
+
+#runMain {
+  flex: 1 1 auto;
+  min-height: 0;                    /* lets this shrink so controls are never pushed off */
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+/* ---- set progress badge (e.g. "Set 2 / 3") ---- */
+#runSet {
+  font-size: clamp(0.9rem, 4vw, 1.4rem);
+  font-weight: 700;
+  color: #fff;
+  background: #0077cc;
+  border-radius: 999px;
+  padding: 0.2rem 0.9rem;
+  margin-bottom: 0.25rem;
+}
+#runSet[hidden] { display: none; }
 
 #runNote {
-  font-size: 3rem;
+  font-size: clamp(1.25rem, 6vw, 3rem);
   font-weight: 700;
   color: #0077cc;
-  min-height: 1.6em;
+  min-height: 1.3em;
+  line-height: 1.15;
+  word-break: break-word;
 }
 
+/* Sized against BOTH axes so it can never push the controls off screen. */
 #runTime {
-  font-family: 'Roboto Mono', monospace;
+  font-family: 'Roboto Mono', ui-monospace, monospace;
   font-weight: 700;
-  font-size: 30vw;
-  max-width: 100vw;
+  font-size: min(20vw, 24vh);
+  line-height: 1;
   text-align: center;
   color: #222;
   user-select: none;
-  margin-bottom: -0.3em;
-  margin-top: -0.3em;
-  width: 100vw;
-  overflow-wrap: break-word;
-  vertical-align: top;
+  font-variant-numeric: tabular-nums;
 }
 
 #runDist {
-  font-size: 3.6rem;
-  /* doubled from 1.8rem */
+  font-size: clamp(1.25rem, 7vw, 3.2rem);
   font-weight: 600;
   color: #555;
+  line-height: 1.1;
 }
+
 #runPace {
-  font-size: 2.2rem;
+  font-size: clamp(1rem, 5vw, 2rem);
   font-weight: 500;
   color: #0077cc;
-  margin-top: 0.2em;
-  margin-bottom: 0.5em;
+  margin-top: 0.15em;
+  margin-bottom: 0.4em;
   min-height: 1.2em;
-  text-align: center;
 }
 
 #queue {
@@ -72,165 +93,94 @@ body {
   font-size: 1rem;
   color: #666;
   border-top: 1px solid #ddd;
-  padding-top: 1rem;
+  padding-top: 0.75rem;
   width: 100%;
-  flex-grow: 1;
-  overflow-y: auto;
-}
-
-#queue strong {
-  font-size: 1.2rem;
-  /* keep as is */
-}
-
-.queue-item {
-  display: flex;
-  justify-content: center;
-  gap: 1.2rem;
-  width: 100%;
-  max-width: 480px;
-  border-bottom: 1px solid #ddd;
-  padding: 0.4rem 0;
-  box-sizing: border-box;
-}
-
-.queue-item > div {
-  flex: 1;
-  text-align: center;
-  white-space: nowrap;
-}
-
-#pauseBtn,
-#returnBtn {
-  cursor: pointer;
-  user-select: none;
-  padding: 1rem 2.5rem;
-  border-radius: 30px;
-  border: none;
-  font-weight: 700;
-  font-size: 1.5rem;
-  transition: background-color 0.3s ease;
-  width: 100%;
-  max-width: 280px;
-  color: white;
-  display: block;
-}
-
-#pauseBtn {
-  background: #0077cc;
-  margin-top: 0.5rem;
-}
-
-#pauseBtn:hover,
-#pauseBtn:focus {
-  background: #005fa3;
-  outline: none;
-}
-#returnBtn {
-  background: #666;
-  margin-top: 1rem;
-  display: none;
-  /* hidden by default */
-}
-
-#returnBtn:hover,
-#returnBtn:focus {
-  background: #444;
-  outline: none;
-}
-
-/* Smaller text styles can be adjusted as needed */
-
-@media (min-width: 481px) {
-  #runTime {
-    font-size: 10rem;
-    /* revert to normal size on larger screens */
-    max-width: none;
-    max-height: none;
-  }
-}
-
-/* Super big time for mobile landscape swim mode */
-
-
-#runTime.superbig {
-  font-size: 15rem;
-  color: green;
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 9999;
-  opacity: 0.8;
-  pointer-events: none;
-  margin-top: -0.15em !important;
-}
-
-/* Hide all other elements except #runTime when in fullscreen counter mode */
-
-#pauseBtn,
-#returnBtn {
-  font-size: 1.2rem;
-  padding: 0.8rem 2rem;
 }
 
 #queueList {
   width: 100%;
   max-width: 480px;
   margin: 0 auto;
-  overflow-x: auto;
+  overflow-x: auto;                 /* wide table scrolls itself, page never does */
 }
 
 #queueTable {
   width: 100%;
   border-collapse: collapse;
-  font-size: 1.2rem;
+  font-size: 1rem;
   color: #333;
   font-weight: 600;
   text-align: center;
 }
-
 #queueTable th,
 #queueTable td {
   border-bottom: 1px solid #ddd;
-  padding: 8px 10px;
+  padding: 6px 8px;
   white-space: nowrap;
 }
+#queueTable th { background-color: #f0f7ff; color: #0077cc; }
+#queueTable th:nth-child(4),
+#queueTable td:nth-child(4) { width: 40%; text-align: left; }
+/* rows belonging to a set get a subtle marker */
+#queueTable tr.in-set td:first-child { border-left: 3px solid #0077cc; }
 
-#queueTable th {
-  background-color: #f0f7ff;
-  color: #0077cc;
+/* ---- pinned controls: always on screen ---- */
+#runControls {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 480px;
+  margin: 0.5rem auto 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid #eee;
 }
 
-#queueTable th:nth-child(4),
-#queueTable td:nth-child(4) {
-  width: 40%;
-  text-align: left; /* Notes are easier to read left-aligned */
+#pauseBtn,
+#returnBtn {
+  cursor: pointer;
+  user-select: none;
+  flex: 1 1 auto;
+  min-height: 52px;                 /* big, thumb-friendly, still leaves room */
+  padding: 0.7rem 1rem;
+  border-radius: 26px;
+  border: none;
+  font-weight: 700;
+  font-size: clamp(1rem, 4.5vw, 1.35rem);
+  color: #fff;
+  transition: background-color 0.2s ease;
+  touch-action: manipulation;
+}
+
+#pauseBtn { background: #0077cc; }
+#pauseBtn:hover, #pauseBtn:focus { background: #005fa3; outline: none; }
+#returnBtn { background: #666; display: none; }   /* shown when stopped/paused */
+#returnBtn:hover, #returnBtn:focus { background: #444; outline: none; }
+
+/* Landscape "swim mode": giant timer overlay, controls still reachable. */
+#runTime.superbig {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: min(40vw, 80vh);
+  color: green;
+  opacity: 0.8;
+  z-index: 9999;
+  pointer-events: none;             /* taps pass through to the buttons */
+  margin: 0;
 }
 
 @media (orientation: landscape) {
-  #runner {
-    padding: 0.5rem;
-  }
-  #runNote {
-    display: block;
-    margin-top: 0;
-  }
-#queue {
-  text-align: left;
-  font-size: 1rem;
-  color: #666;
-  border-top: 1px solid #ddd;
-  padding-top: 1rem;
-  width: 100%;
-  flex-grow: 1;
-  overflow-y: auto;
-  min-height: 150px; /* ensure minimum height for queue */
-}
-  #runNote {
-    margin-top: 0.2rem;
-  }
-  #queue {
-  }
+  #runner { padding-top: calc(var(--safe-t) + 0.25rem); padding-bottom: calc(var(--safe-b) + 0.25rem); }
+  #runNote { font-size: clamp(1rem, 4vh, 2rem); min-height: 0; }
+  #runTime { font-size: min(18vw, 34vh); }
+  #runDist { font-size: clamp(1rem, 6vh, 2.4rem); }
+  #runPace { font-size: clamp(0.9rem, 4vh, 1.5rem); margin-bottom: 0.2em; }
+  #queue { padding-top: 0.4rem; }
+  #pauseBtn, #returnBtn { min-height: 44px; }
 }

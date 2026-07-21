@@ -1,393 +1,520 @@
-// — on page load, subscribe to any status event. If a run is active, go to runner:
-window.addEventListener('DOMContentLoaded', () => {
-  const es = new EventSource('/events');
-  es.addEventListener('status', e => {
-    const st = JSON.parse(e.data);
-    // if a run is active, and we're still on the editor page, redirect:
-    if (st.running && !location.pathname.endsWith('run.html')) {
-      sessionStorage.setItem('currentWorkouts', JSON.stringify(DB.workouts));
-      window.location.href = `/run.html?id=${current?.id || ''}`;
-    }
-  });
-});
+/* ============================================================
+   Swim workout planner — hash-routed, mobile-first.
 
-/* ---------- helpers ---------- */
+   Routes
+     #/          full-screen workout list
+     #/w/:id     full-screen workout view / editor
+
+   Workout JSON (must match firmware workout_storage.cpp)
+     { id, title, swims: [ item, ... ] }
+       item = swim  { speed, dur, note }
+            | set   { type:"set", repeat:N, note, swims:[ swim, ... ] }
+     A set's swims are repeated `repeat` times when the workout runs.
+   ============================================================ */
+
 const $ = id => document.getElementById(id);
-const secsToMMSS = sec => {
-  const m = Math.floor(sec / 60), s = sec % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-};
-const mmssToSecs = txt => {
-  const [m, s] = txt.split(':').map(Number);
-  return (m || 0) * 60 + (s || 0);
-};
-const calcDistance = s => s.speed ? Math.round(s.dur * 100 / s.speed) : 0;
-
-const editorPane = $('editorPane');
-const pauseBtn = $('pauseBtn');
-let dirty = false;          // ← tracks unsaved edits
-
-const toggleSidebarBtn = $('toggleSidebarBtn');
-const sidebar = $('sidebar');
-
-function setSidebarVisibility(visible) {
-  if (visible) {
-    sidebar.style.display = 'block';
-    toggleSidebarBtn.setAttribute('aria-expanded', 'true');
-    toggleSidebarBtn.textContent = 'Hide Workouts';
-  } else {
-    sidebar.style.display = 'none';
-    toggleSidebarBtn.setAttribute('aria-expanded', 'false');
-    toggleSidebarBtn.textContent = 'Show Workouts';
-  }
-}
-
-function updateEditorVisibility() {
-  // Show editor pane if a workout is selected, regardless of edit mode
-  editorPane.style.display = current ? 'block' : 'none';
-  $('startSrv').disabled = !current;
-  $('delBtn').disabled = !current;
-  $('saveBtn').disabled = !current || !dirty;
-}
 
 /* ---------- state ---------- */
-let DB = { workouts: [] };            // <-- initialise with empty array
-let current = null, timer = null, paused = false;
+let DB = { workouts: [] };
+let current = null;      // workout currently shown
 let editMode = false;
+let dirty = false;
+let addTarget = null;    // null = append to workout; number = index of the set we're adding into
+let editingPath = null;  // [i] or [i,j] while editing an existing swim
+// Older firmware stores only a flat swim list: it would silently mangle a set
+// into {speed:0,dur:0}. /api/settings advertises {"sets":true} when the device
+// can store them, so we hide the set editor unless it does.
+let setsSupported = false;
 
-/* ---------- DOM refs ---------- */
-let workoutList = $('workoutList');
-let titleIn = $('titleIn');
-let tbody = $('swimTab').querySelector('tbody');
-let runner = $('runner'), runNote = $('runNote'), runTime = $('runTime'), runDist = $('runDist'), queueDiv = $('queue');
+async function detectCapabilities() {
+  try {
+    const res = await fetch('/api/settings');
+    if (!res.ok) return;
+    const j = await res.json();
+    setsSupported = j && j.sets === true;
+  } catch (e) { /* leave sets disabled if we can't tell */ }
+}
 
-/* ---------- live calculations ---------- */
+/* ---------- small helpers ---------- */
+const secsToMMSS = sec => {
+  sec = Math.max(0, Math.round(sec || 0));
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+const calcDistance = s => (s && s.speed) ? Math.round(s.dur * 100 / s.speed) : 0;
+const isSet   = it => !!(it && it.type === 'set');
+const setReps = it => Math.min(100, Math.max(1, parseInt(it && it.repeat, 10) || 1));
+const itemsOf = w => (w && Array.isArray(w.swims)) ? w.swims : [];
+
+function workoutTotals(w) {
+  let sec = 0, dist = 0;
+  itemsOf(w).forEach(it => {
+    if (isSet(it)) {
+      const r = setReps(it);
+      (it.swims || []).forEach(s => { sec += r * (s.dur || 0); dist += r * calcDistance(s); });
+    } else if (it) {
+      sec += it.dur || 0;
+      dist += calcDistance(it);
+    }
+  });
+  return { sec, dist };
+}
+
+function mkBtn(label, aria, onClick, cls) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'btn-small' + (cls ? ' ' + cls : '');
+  b.textContent = label;
+  b.setAttribute('aria-label', aria);
+  b.addEventListener('click', ev => { ev.stopPropagation(); onClick(); });
+  return b;
+}
+
+function markDirty() { dirty = true; updateButtons(); }
+
+/* ---------- path helpers (a swim lives at [i] or [i,j]) ---------- */
+function arrForPath(path) {
+  return path.length === 1 ? current.swims : (current.swims[path[0]].swims || []);
+}
+function getSwim(path) { return arrForPath(path)[path[path.length - 1]]; }
+function setSwimAt(path, s) { arrForPath(path)[path[path.length - 1]] = s; }
+function removeSwim(path) { arrForPath(path).splice(path[path.length - 1], 1); }
+function moveItem(path, d) {
+  const arr = arrForPath(path);
+  const i = path[path.length - 1], j = i + d;
+  if (j < 0 || j >= arr.length) return;
+  [arr[i], arr[j]] = [arr[j], arr[i]];
+  markDirty();
+  renderItems();
+}
+
+/* ============================================================
+   Router
+   ============================================================ */
+function parseHash() {
+  const h = location.hash || '#/';
+  const m = h.match(/^#\/w\/(.+)$/);
+  return m ? { view: 'workout', id: decodeURIComponent(m[1]) } : { view: 'list' };
+}
+
+async function route() {
+  const r = parseHash();
+  if (r.view === 'workout') {
+    const ok = await showWorkout(r.id);
+    if (!ok) { location.hash = '#/'; return; }
+  } else {
+    showList();
+  }
+}
+
+function showList() {
+  current = null; editMode = false; dirty = false;
+  addTarget = null; editingPath = null;
+  $('workoutView').hidden = true;
+  $('listView').hidden = false;
+  renderList();
+}
+
+async function showWorkout(id) {
+  let w = DB.workouts.find(x => String(x.id) === String(id));
+  if (!w) {
+    try {
+      const res = await fetch(`/api/workout?id=${encodeURIComponent(id)}`);
+      if (!res.ok) return false;
+      w = await res.json();
+      DB.workouts.push(w);
+    } catch (e) { return false; }
+  }
+  if (!w) return false;
+  if (!Array.isArray(w.swims)) w.swims = [];
+  current = w;
+  dirty = false;
+  addTarget = null;
+  editingPath = null;
+  // a brand-new (unsaved) workout opens straight into edit mode
+  editMode = !!w.__isNew;
+  $('listView').hidden = true;
+  $('workoutView').hidden = false;
+  renderWorkout();
+  return true;
+}
+
+/* ============================================================
+   List view
+   ============================================================ */
+const fetchAll = async () => {
+  try {
+    const ids = await (await fetch('/api/workouts')).json();
+    const loaded = await Promise.all(ids.map(id =>
+      fetch(`/api/workout?id=${encodeURIComponent(id)}`)
+        .then(r => r.json())
+        .catch(() => null)
+    ));
+    // keep any unsaved local workout around
+    const unsaved = DB.workouts.filter(w => w.__isNew);
+    DB.workouts = loaded.filter(Boolean).concat(unsaved);
+  } catch (e) {
+    console.error('Failed to load workouts', e);
+  }
+  if (!$('listView').hidden) renderList();
+};
+
+function renderList() {
+  const ul = $('workoutList');
+  ul.innerHTML = '';
+  const ws = DB.workouts || [];
+  $('listEmpty').hidden = ws.length > 0;
+  ws.forEach(w => {
+    const li = document.createElement('li');
+    li.className = 'list-row';
+    li.tabIndex = 0;
+
+    const name = document.createElement('span');
+    name.className = 'list-name';
+    name.textContent = w.title || '(untitled)';
+
+    const meta = document.createElement('span');
+    meta.className = 'list-meta';
+    const t = workoutTotals(w);
+    const nSets = itemsOf(w).filter(isSet).length;
+    meta.textContent = `${secsToMMSS(t.sec)} · ${t.dist} m` + (nSets ? ` · ${nSets} set${nSets > 1 ? 's' : ''}` : '');
+
+    li.appendChild(name);
+    li.appendChild(meta);
+    const go = () => { location.hash = `#/w/${encodeURIComponent(w.id)}`; };
+    li.addEventListener('click', go);
+    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
+    ul.appendChild(li);
+  });
+}
+
+/* ============================================================
+   Workout view
+   ============================================================ */
+function renderWorkout() {
+  if (!current) return;
+  $('wTitle').textContent = current.title || '(untitled)';
+  $('titleRow').hidden = !editMode;
+  $('titleIn').value = current.title || '';
+  $('editBtn').textContent = editMode ? '✓' : '✎';
+  $('editBtn').setAttribute('aria-label', editMode ? 'Done editing' : 'Edit workout');
+
+  const t = workoutTotals(current);
+  $('wSummary').textContent = `${secsToMMSS(t.sec)} · ${t.dist} m`;
+
+  renderItems();
+  updateAddTools();
+  updateButtons();
+}
+
+function renderItems() {
+  const list = $('itemList');
+  list.innerHTML = '';
+  const items = itemsOf(current);
+  if (!items.length) {
+    const li = document.createElement('li');
+    li.className = 'empty';
+    li.textContent = editMode ? 'Add a swim or a set below.' : 'No segments yet.';
+    list.appendChild(li);
+    return;
+  }
+  items.forEach((it, i) => {
+    list.appendChild(isSet(it) ? renderSetItem(it, i) : renderSwimItem(it, [i], String(i + 1)));
+  });
+}
+
+function rowActions(path) {
+  const acts = document.createElement('div');
+  acts.className = 'row-actions';
+  acts.appendChild(mkBtn('↑', 'Move up', () => moveItem(path, -1)));
+  acts.appendChild(mkBtn('↓', 'Move down', () => moveItem(path, 1)));
+  acts.appendChild(mkBtn('✎', 'Edit swim', () => beginEditSwim(path)));
+  acts.appendChild(mkBtn('✖', 'Delete swim', () => {
+    removeSwim(path);
+    if (editingPath && editingPath.join() === path.join()) cancelEditSwim();
+    markDirty(); renderWorkout();
+  }, 'btn-danger'));
+  return acts;
+}
+
+function renderSwimItem(s, path, label) {
+  const li = document.createElement('li');
+  li.className = 'item swim' + (editingPath && editingPath.join() === path.join() ? ' editing' : '');
+
+  const main = document.createElement('div');
+  main.className = 'item-main';
+
+  const no = document.createElement('span'); no.className = 'item-no'; no.textContent = label;
+  const pace = document.createElement('span'); pace.className = 'item-pace';
+  pace.textContent = s.speed ? `${secsToMMSS(s.speed)}/100m` : 'rest';
+  const time = document.createElement('span'); time.className = 'item-time'; time.textContent = secsToMMSS(s.dur);
+  const dist = document.createElement('span'); dist.className = 'item-dist';
+  dist.textContent = s.speed ? `${calcDistance(s)} m` : '';
+
+  [no, pace, time, dist].forEach(el => main.appendChild(el));
+  li.appendChild(main);
+
+  if (s.note) {
+    const n = document.createElement('div');
+    n.className = 'item-note';
+    n.textContent = s.note;          // textContent: never inject user text as HTML
+    li.appendChild(n);
+  }
+  if (editMode) li.appendChild(rowActions(path));
+  return li;
+}
+
+function renderSetItem(it, i) {
+  const li = document.createElement('li');
+  li.className = 'item set' + (addTarget === i ? ' targeted' : '');
+
+  const head = document.createElement('div');
+  head.className = 'set-head';
+
+  if (editMode) {
+    // Editable set name. Updates the model in place and does NOT re-render,
+    // otherwise the input would lose focus on every keystroke.
+    const nameIn = document.createElement('input');
+    nameIn.type = 'text';
+    nameIn.className = 'set-name-input';
+    nameIn.placeholder = `Set ${i + 1} name`;
+    nameIn.value = it.note || '';
+    nameIn.setAttribute('aria-label', `Name for set ${i + 1}`);
+    nameIn.addEventListener('input', () => { it.note = nameIn.value; markDirty(); });
+    head.appendChild(nameIn);
+  } else {
+    const title = document.createElement('span');
+    title.className = 'set-title';
+    title.textContent = it.note ? `Set — ${it.note}` : `Set ${i + 1}`;
+    head.appendChild(title);
+  }
+
+  const reps = document.createElement('span');
+  reps.className = 'set-reps';
+  reps.textContent = `×${setReps(it)}`;
+  head.appendChild(reps);
+  li.appendChild(head);
+
+  if (editMode) {
+    const acts = document.createElement('div');
+    acts.className = 'row-actions set-actions';
+    acts.appendChild(mkBtn('−', 'Fewer repeats', () => { it.repeat = Math.max(1, setReps(it) - 1); markDirty(); renderWorkout(); }));
+    acts.appendChild(mkBtn('+', 'More repeats', () => { it.repeat = Math.min(100, setReps(it) + 1); markDirty(); renderWorkout(); }));
+    acts.appendChild(mkBtn('↑', 'Move set up', () => moveItem([i], -1)));
+    acts.appendChild(mkBtn('↓', 'Move set down', () => moveItem([i], 1)));
+    acts.appendChild(mkBtn('➕ swim', 'Add swim to this set', () => { addTarget = i; editingPath = null; updateAddTools(); renderItems(); }));
+    acts.appendChild(mkBtn('✖', 'Delete set', () => {
+      current.swims.splice(i, 1);
+      if (addTarget === i) addTarget = null;
+      editingPath = null;
+      markDirty(); renderWorkout();
+    }, 'btn-danger'));
+    li.appendChild(acts);
+  }
+
+  const sub = document.createElement('ol');
+  sub.className = 'sub-items';
+  const swims = it.swims || [];
+  if (!swims.length) {
+    const e = document.createElement('li');
+    e.className = 'empty';
+    e.textContent = editMode ? 'Empty — tap “➕ swim” to add one.' : 'Empty set';
+    sub.appendChild(e);
+  } else {
+    swims.forEach((s, j) => sub.appendChild(renderSwimItem(s, [i, j], `${i + 1}.${j + 1}`)));
+  }
+  li.appendChild(sub);
+
+  // per-set totals: N × (one round) = total
+  const r = setReps(it);
+  const rt = swims.reduce((a, s) => a + (s.dur || 0), 0);
+  const rd = swims.reduce((a, s) => a + calcDistance(s), 0);
+  const foot = document.createElement('div');
+  foot.className = 'set-foot';
+  foot.textContent = `${r} × (${secsToMMSS(rt)} · ${rd} m) = ${secsToMMSS(r * rt)} · ${r * rd} m`;
+  li.appendChild(foot);
+
+  return li;
+}
+
+/* ---------- add / edit tools ---------- */
+function updateAddTools() {
+  $('addTools').hidden = !editMode;
+  // Only offer sets when the firmware can actually store them.
+  const setBtn = $('addSetBtn');
+  if (setBtn) {
+    setBtn.hidden = !setsSupported;
+    setBtn.title = setsSupported ? '' : 'This device’s firmware does not support sets yet';
+  }
+  const lbl = $('addTargetLbl');
+  const reset = $('addTargetReset');
+  if (addTarget !== null && isSet(current && current.swims[addTarget])) {
+    const st = current.swims[addTarget];
+    lbl.textContent = st.note ? `set “${st.note}”` : `set ${addTarget + 1}`;
+    reset.hidden = false;
+  } else {
+    addTarget = null;
+    lbl.textContent = 'workout';
+    reset.hidden = true;
+  }
+}
+
+function beginEditSwim(path) {
+  editingPath = path.slice();
+  const s = getSwim(path);
+  const el = $('addRow');
+  if (el && typeof el.setMode === 'function') el.setMode('edit', 0, s);
+  renderItems();
+  el && el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function cancelEditSwim() {
+  editingPath = null;
+  const el = $('addRow');
+  if (el && typeof el.setMode === 'function') el.setMode('add');
+}
 
 function updateButtons() {
-  $('saveBtn').disabled = !dirty;
-  $('startSrv').disabled = dirty || !current;
+  $('saveBtn').disabled = !current || !dirty;
+  $('startBtn').disabled = !current || dirty || !itemsOf(current).length;
+  $('delBtn').disabled = !current;
 }
 
-async function togglePause() {
-  const res = await fetch('/api/pause', { method: 'POST' });
-  const json = await res.json();             // {paused: true|false}
-  const paused = json.paused;
-
-  pauseBtn.textContent = paused ? '▶ Resume' : '⏸ Pause';
-}
-
-/* ---------- CRUD ---------- */
-const fetchAll = async () => {
-  const ids = await (await fetch('/api/workouts')).json();   // ["1749…", "1750…"]
-  const promises = ids.map(id =>
-    fetch(`/api/workout?id=${id}`)
-      .then(r => r.json())
-      .catch(err => { console.error('Failed to load', id, err); return null; })
-  );
-
-  DB.workouts = (await Promise.all(promises)).filter(Boolean);  // drop failed
-  renderList();
-};
-const renderList = () => {
-  workoutList.innerHTML = '';
-  DB.workouts?.forEach(w => {
-    const li = document.createElement('li');
-    li.textContent = w.title || '(untitled)';
-    li.onclick = () => loadWorkout(w.id);
-    workoutList.appendChild(li);
-  });
-  updateEditorVisibility();
-};
-const newWorkout = () => {
-  current = { id: Date.now().toString(), title: '', swims: [] };
-  dirty = true;
-  editMode = true; // Immediately enter edit mode
-  fillForm();
-  redrawSwims();
-  updateEditorVisibility(); // Show editor pane now
-  updateButtons();
-  updateEditModeUI && updateEditModeUI();
-
-  // Hide sidebar and update toggle button
-  setSidebarVisibility(false);
-};
-
-const loadWorkout = async id => {
-  let w = DB.workouts.find(w => w.id === id);
-  if (!w) {
-    // not yet in memory – fetch on demand
-    w = await (await fetch(`/${id}.json`)).json();
-    DB.workouts.push(w);              // cache it for later
-  }
-  current = w;
-  editMode = false; // Not in edit mode by default when loading
-  updateEditorVisibility();
-  fillForm();
-  redrawSwims();
-  dirty = false;
-  updateButtons();
-  updateEditModeUI && updateEditModeUI();
-
-  // Ensure edit button is visible when workout is loaded and not in edit mode
-  const editBtn = document.getElementById('editBtn');
-  if (editBtn) {
-    editBtn.style.display = (!editMode && current) ? '' : 'none';
-  }
-};
-const fillForm = () => {
-  titleIn.value = current?.title || '';
-  $('paneTitle').textContent = current
-    ? (editMode ? 'Edit workout' : 'Workout')
-    : 'New workout';
-};
-
-let editedSwimIndex = null;
-
-window.editSwim = function(index) {
-  if (!current) return;
-  const swim = current.swims[index];
-  if (!swim) return;
-  editedSwimIndex = index;
-  editMode = true;
-  redrawSwims();
-  updateEditModeUI();
-  updateButtons();
-};
-
-const redrawSwims = () => {
-  tbody.innerHTML = '';
-  if (!current) return;
-  current.swims.forEach((s, i) => {
-    const tr = tbody.insertRow();
-    if (i === editedSwimIndex) {
-      // Replace row content with add-swim component in edit mode
-      const addSwimComponent = document.createElement('add-swim');
-      addSwimComponent.setMode('edit', i, s);
-      // Listen for swim-update event to update swim and exit edit mode
-      addSwimComponent.addEventListener('swim-update', ({ detail: { index, swim } }) => {
-        if (!current) return;
-        if (typeof index !== 'number' || index < 0 || index >= current.swims.length) return;
-        current.swims[index] = swim;
-        editedSwimIndex = null;
-        redrawSwims();
-        dirty = true;
-        updateButtons();
-      });
-      // Listen for swim-change event to update swim automatically
-      addSwimComponent.addEventListener('swim-change', ({ detail: swim }) => {
-        if (!current) return;
-        if (typeof editedSwimIndex !== 'number' || editedSwimIndex < 0 || editedSwimIndex >= current.swims.length) return;
-        current.swims[editedSwimIndex] = swim;
-        dirty = true;
-      });
-      const td = tr.insertCell();
-      td.colSpan = 6; // span all columns
-      td.appendChild(addSwimComponent);
-    } else {
-      tr.insertCell().textContent = i + 1;
-      tr.insertCell().textContent = s.speed ? secsToMMSS(s.speed) : 'rest';
-      tr.insertCell().textContent = secsToMMSS(s.dur);
-      tr.insertCell().textContent = `${calcDistance(s)}m`;
-      tr.insertCell().textContent = s.note || '';
-      const act = tr.insertCell();
-      if (editMode) {
-        act.innerHTML = `<button class="swim-btn" onclick="moveSwim(${i},-1)">↑</button>
-                     <button class="swim-btn" onclick="moveSwim(${i},1)">↓</button>
-                     <button class="swim-btn" onclick="delSwim(${i})">✖</button>
-                     <button class="swim-btn" onclick="editSwim(${i})">✎</button>`;
-      } else {
-        act.innerHTML = '';
-      }
-    }
-  });
-  updateEditModeUI();
-};
-window.moveSwim = (i, d) => { if (!current) return; const s = current.swims; if (i + d < 0 || i + d >= s.length) return;[s[i], s[i + d]] = [s[i + d], s[i]]; redrawSwims(); dirty = true; updateButtons(); };
-window.delSwim = i => { current.swims.splice(i, 1); redrawSwims(); dirty = true; updateButtons(); };
-
-const addSwimEl = document.getElementById('addRow');
-
-addSwimEl.addEventListener('swim-add', ({ detail: swim }) => {
-  if (!current) return;
-  current.swims.push(swim);
-  redrawSwims();
-  dirty = true;
-  updateButtons();
-});
-
-addSwimEl.addEventListener('swim-update', ({ detail: { index, swim } }) => {
-  if (!current) return;
-  if (typeof index !== 'number' || index < 0 || index >= current.swims.length) return;
-  current.swims[index] = swim;
-  editedSwimIndex = null;
-  redrawSwims();
-  dirty = true;
-  updateButtons();
-});
-
-function updateEditModeUI() {
-  // Show/hide Actions column in table header
-  const swimTab = document.getElementById('swimTab');
-  if (swimTab) {
-    const ths = swimTab.querySelectorAll('thead th');
-    if (ths.length > 0) {
-      // Actions is the last column
-      ths[ths.length - 1].style.display = editMode ? '' : 'none';
-    }
-    // Show/hide Actions column in all rows
-    const trs = swimTab.querySelectorAll('tbody tr');
-    trs.forEach(tr => {
-      if (tr.cells.length > 5) {
-        tr.cells[5].style.display = editMode ? '' : 'none';
-      }
-    });
-  }
-
-  // Show/hide Add Swim element
-  const addSwimEl = document.getElementById('addRow');
-  if (addSwimEl) {
-    // Show only if in edit mode and no swim is being edited
-    addSwimEl.style.display = (editMode && editedSwimIndex === null) ? '' : 'none';
-    if (addSwimEl.style.display === '') {
-      addSwimEl.setMode('add');
-    }
-  }
-
-  // Show/hide Edit button
-  let editBtn = document.getElementById('editBtn');
-  if (!editBtn) {
-    editBtn = document.createElement('button');
-    editBtn.id = 'editBtn';
-    editBtn.textContent = '✎ Edit';
-    editBtn.type = 'button';
-    editBtn.style.marginLeft = '1em';
-    editBtn.onclick = () => {
-      editMode = true;
-      updateEditModeUI();
-      fillForm();
-      redrawSwims();
-      updateButtons();
-
-      // Hide sidebar and update toggle button
-      setSidebarVisibility(false);
-    };
-    // Insert after title input
-    const titleIn = document.getElementById('titleIn');
-    if (titleIn && titleIn.parentNode) {
-      titleIn.parentNode.appendChild(editBtn);
-    }
-  }
-  editBtn.style.display = (!editMode && current) ? '' : 'none';
+/* ============================================================
+   CRUD / actions
+   ============================================================ */
+function newWorkout() {
+  const w = { id: Date.now().toString(), title: '', swims: [], __isNew: true };
+  DB.workouts.push(w);
+  location.hash = `#/w/${encodeURIComponent(w.id)}`;
 }
 
 const saveWorkout = async () => {
   if (!current || !dirty) return;
-  current.title = titleIn.value.trim();
-  const method = 'POST';
-  const url = `/api/workout?id=${current.id}`;
-  await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(current) });
-  await fetchAll();
+  current.title = $('titleIn').value.trim();
+  const body = { id: current.id, title: current.title, swims: itemsOf(current) };
+  try {
+    const res = await fetch(`/api/workout?id=${encodeURIComponent(current.id)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) { alert('Save failed: ' + res.status); return; }
+  } catch (e) { alert('Save failed: ' + e); return; }
+  delete current.__isNew;
   dirty = false;
   editMode = false;
-  updateEditModeUI();
-  fillForm();
-  redrawSwims();
-  updateButtons();
+  cancelEditSwim();
+  await fetchAll();
+  // re-point `current` at the refreshed copy
+  const again = DB.workouts.find(x => String(x.id) === String(current.id));
+  if (again) current = again;
+  renderWorkout();
 };
 
 const deleteWorkout = async () => {
   if (!current) return;
-  /* native confirm dialog – return if user cancels */
-  const ok = confirm(`Delete workout “${current.title || current.id}” ?`);
-  if (!ok) return;
-
-  await fetch(`/api/workout?id=${current.id}`, {
-    method: 'DELETE',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id: current.id })
-  });
-  current = null;          // clear editor
-  await fetchAll();        // <- refresh list & cache
-  tbody.innerHTML = '';
-  titleIn.value = '';
-  updateEditorVisibility();
+  if (!confirm(`Delete workout “${current.title || current.id}”?`)) return;
+  if (!current.__isNew) {
+    try {
+      await fetch(`/api/workout?id=${encodeURIComponent(current.id)}`, { method: 'DELETE' });
+    } catch (e) { /* fall through – refresh below will show the truth */ }
+  }
+  DB.workouts = DB.workouts.filter(w => String(w.id) !== String(current.id));
+  await fetchAll();
+  location.hash = '#/';
 };
 
-function resetSrvUI() {
-  clearInterval(statusTimer);
-  statusTimer = null;
-  $('srvStatus').textContent = '';
-  $('startSrv').disabled = !current;
-  pauseBtn.hidden = true;
-  pauseBtn.disabled = true;
-}
-
-/* -------- server-side simulation --------------------------------- */
-let statusTimer = null;
-
-async function startServerSide() {
+async function startWorkout() {
   if (!current) return;
-
-  // build URL with workout ID in the query parameter
-  const url = `/api/run?id=${encodeURIComponent(current.id)}`;
-
-  // fire the POST with no body and check response
   try {
-    const res = await fetch(url, { method: 'POST' });
-    if (res.ok) {
-      // disable the “Start” button, enable “Pause”
-      document.getElementById('startSrv').disabled = true;
-      pauseBtn.hidden = false;
-      pauseBtn.disabled = false;
-      pauseBtn.textContent = '⏸ Pause';
-
-      // store workouts and redirect into the runner page
-      sessionStorage.setItem('currentWorkouts', JSON.stringify(DB.workouts));
-      window.location.href = `/run.html?id=${encodeURIComponent(current.id)}`;
-    } else {
-      let errorMsg = '';
-      try {
-        errorMsg = (await res.text()) || res.statusText;
-      } catch (e) {
-        errorMsg = res.statusText;
-      }
-      alert('Failed to start: ' + errorMsg);
-    }
+    const res = await fetch(`/api/run?id=${encodeURIComponent(current.id)}`, { method: 'POST' });
+    if (!res.ok) { alert('Failed to start: ' + ((await res.text()) || res.statusText)); return; }
+    sessionStorage.setItem('currentWorkouts', JSON.stringify(DB.workouts));
+    window.location.href = `/run.html?id=${encodeURIComponent(current.id)}`;
   } catch (err) {
     alert('Failed to start: ' + err);
   }
 }
 
-async function pollStatus() {
-  const st = await (await fetch('/api/status')).json();
-  if (!st.active) { resetSrvUI(); return; }
+/* ============================================================
+   Wire up
+   ============================================================ */
+$('newBtn').addEventListener('click', newWorkout);
+$('backBtn').addEventListener('click', () => { location.hash = '#/'; });
+$('saveBtn').addEventListener('click', saveWorkout);
+$('delBtn').addEventListener('click', deleteWorkout);
+$('startBtn').addEventListener('click', startWorkout);
 
-  pauseBtn.textContent = st.paused ? '▶ Resume' : '⏸ Pause';
+$('editBtn').addEventListener('click', () => {
+  editMode = !editMode;
+  if (!editMode) cancelEditSwim();
+  renderWorkout();
+});
 
-  const swim = current.swims[st.idx] || {};
-  $('srvStatus').textContent =
-    `${st.paused ? 'Paused – ' : ''}`
-    + `Swim #${st.idx + 1} (${swim.note || (swim.speed ? 'swim' : 'rest')}) `
-    + `elapsed ${Math.floor(st.elapsed / 1000)} s`;
-}
+$('titleIn').addEventListener('input', () => {
+  if (!current) return;
+  current.title = $('titleIn').value;
+  $('wTitle').textContent = current.title || '(untitled)';
+  markDirty();
+});
 
-/* ---------- wire UI ---------- */
-$('newBtn').onclick = newWorkout;
-$('saveBtn').onclick = saveWorkout;
-$('delBtn').onclick = deleteWorkout;
-$('startSrv').onclick = startServerSide;
-pauseBtn.onclick = togglePause;
+$('addTargetReset').addEventListener('click', () => { addTarget = null; updateAddTools(); renderItems(); });
 
-/* title box */
-titleIn.oninput = () => { dirty = true; updateButtons(); };
+$('addSetBtn').addEventListener('click', () => {
+  if (!current) return;
+  if (!setsSupported) {
+    alert('This device’s firmware does not support sets yet.\nFlash the latest firmware over USB to enable them.');
+    return;
+  }
+  current.swims.push({ type: 'set', repeat: 2, note: '', swims: [] });
+  addTarget = current.swims.length - 1;   // new swims go into the set we just made
+  editingPath = null;
+  markDirty();
+  renderWorkout();
+});
 
-/* in addSwim() right after current.swims.push(swim) */
-dirty = true; updateButtons();
+/* add-swim component events */
+const addSwimEl = $('addRow');
+
+addSwimEl.addEventListener('swim-add', ({ detail: swim }) => {
+  if (!current) return;
+  if (addTarget !== null && isSet(current.swims[addTarget])) {
+    current.swims[addTarget].swims.push(swim);
+  } else {
+    current.swims.push(swim);
+  }
+  markDirty();
+  renderWorkout();
+});
+
+addSwimEl.addEventListener('swim-update', ({ detail }) => {
+  if (!current || !editingPath) return;
+  setSwimAt(editingPath, detail.swim);
+  editingPath = null;
+  markDirty();
+  renderWorkout();
+});
+
+/* If a run is already active, jump straight to the runner. */
+window.addEventListener('DOMContentLoaded', () => {
+  try {
+    const es = new EventSource('/events');
+    es.addEventListener('status', e => {
+      let st; try { st = JSON.parse(e.data); } catch (_) { return; }
+      if (st && st.running && !location.pathname.endsWith('run.html')) {
+        sessionStorage.setItem('currentWorkouts', JSON.stringify(DB.workouts));
+        window.location.href = `/run.html?id=${encodeURIComponent(current ? current.id : '')}`;
+      }
+    });
+  } catch (e) { /* SSE unsupported – non-fatal */ }
+});
+
+window.addEventListener('hashchange', route);
 
 /* ---------- init ---------- */
-fetchAll();
-updateButtons();
-
-toggleSidebarBtn.addEventListener('click', () => {
-  setSidebarVisibility(sidebar.style.display !== 'block');
-});
+(async function init() {
+  await detectCapabilities();
+  await fetchAll();
+  await route();
+})();

@@ -29,29 +29,47 @@ tpl.innerHTML = /*html*/`
     }
     label { font-weight: 500; grid-column: 1/2; }
 
+    /* 2.5rem ≈ 40px: comfortable to hit with a thumb without breaking the grid */
     .btn-step {
-      width: 1.6rem; height: 1.6rem;
+      width: 2.5rem; height: 2.5rem;
+      font-size: 1.25rem;
       font-weight: 700;
       display: flex; align-items: center; justify-content: center;
       background: var(--gray-200,#eee);
-      border: 0; border-radius: .25rem;
+      color: #222;
+      border: 0; border-radius: .5rem;
       cursor: pointer;
       user-select: none;
+      -webkit-user-select: none;
+      touch-action: manipulation;      /* no double-tap zoom on the steppers */
       line-height: 1;
+      padding: 0;
     }
-    input[type="range"] { width: 100%; }
+    /* taller track = far easier to drag accurately on a phone */
+    input[type="range"] { width: 100%; height: 2rem; touch-action: pan-y; }
+    input[type="text"] {
+      font-size: 16px;                 /* stops iOS auto-zoom on focus */
+      padding: .5rem .6rem;
+      min-height: 2.5rem;
+      width: 100%;
+      border: 1px solid var(--color-border, #ccc);
+      border-radius: .5rem;
+    }
     .val { font-size: .8rem; color: var(--gray-600,#555); white-space: nowrap; }
 
     /* enlarge rest checkbox */
     input[type="checkbox"]#rest {
       transform: scale(1.6);
       transform-origin: center;
+      margin-left: .5rem;
     }
 
     button.add {
       margin-top: .5rem;
-      padding: .4rem 1rem;
+      padding: .6rem 1rem;
       font-size: 1rem;
+      width: 100%;
+      min-height: 44px;                /* full-width, thumb-friendly */
     }
   </style>
 
