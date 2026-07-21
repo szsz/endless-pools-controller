@@ -107,7 +107,7 @@ const LIST_COLOR = c565(205,133,63);
 let CAPS = true;   // mirrors the device's "caps" setting
 const BAR_IDLE = c565(255,140,0);        // progress-bar segment, not current
 const MARK_CURRENT = c565(40,120,255);   // blue: current swim
-const MARK_SET = c565(25,200,25);        // green: step belongs to a set
+const MARK_SET = c565(255,255,255);      // white: step belongs to a set
 
 function clearScreen() { fb.fill(-1); }
 function px(x, y, c) { x|=0; y|=0; if (x>=0 && x<W && y>=0 && y<H) fb[y*W + x] = c; }
@@ -349,7 +349,9 @@ function drawUpcomingList(arr, startY, curSetIdx, curSetPos, listCol, markSet, m
       y += LHTT;
     }
     // y is the next baseline; the block's last visual row ends at y - 5
-    drawSetSidebar(blockTop, y - 5, reps, blueTop, blueBot, markSet, markCur);
+    // The active set is unsegmented - its bar marks the current exercise instead.
+    const isActiveSet = (si === curSetIdx);
+    drawSetSidebar(blockTop, y - 5, reps, !isActiveSet, blueTop, blueBot, markSet, markCur);
   }
 }
 

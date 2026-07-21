@@ -500,7 +500,7 @@ void printJSon(DynamicJsonDocument doc)
   // Shared by both modes.
   const ColorRGB BAR_IDLE{255, 140, 0};        // progress-bar segment, not current
   const ColorRGB MARK_CURRENT{40, 120, 255};   // blue: the swim in progress
-  const ColorRGB MARK_SET{25, 200, 25};        // green: belongs to a set
+  const ColorRGB MARK_SET{255, 255, 255};      // white: belongs to a set
   const ColorRGB LIST_COLOR{205, 133, 63};     // upcoming rows
   const int curSetIdx = doc["set_index"].is<int>() ? doc["set_index"].as<int>() : -1;
   const int curSetPos = doc["set_pos"].is<int>() ? doc["set_pos"].as<int>() : -1;
