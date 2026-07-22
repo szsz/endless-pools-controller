@@ -219,6 +219,35 @@ const fmtMMSS = (secs) => {
 /* ============================================================
    Renderers — 1:1 with hub75.cpp printJSon()
    ============================================================ */
+/* The 2px bar under the counters, shared by both modes. Inside a set: one
+   segment per repetition, the current one blue. Otherwise: a fill bar for the
+   current swim easing orange->green. Returns the height drawn (0 if nothing). */
+function drawTopBar(barY, curSetReps, curSetRep, durSecCurrent, remTop, inSet) {
+  if (inSet) {
+    const gap = curSetReps > 8 ? 1 : 2;
+    for (let i = 0; i < curSetReps; i++) {
+      let xs = Math.trunc((i * (W + gap)) / curSetReps);
+      let xe = Math.trunc(((i + 1) * (W + gap)) / curSetReps) - gap - 1;
+      if (xe < xs) xe = xs;
+      const col = (i === (curSetRep - 1)) ? MARK_CURRENT : BAR_IDLE;
+      for (let x = xs; x <= xe && x < W; x++) { px(x, barY, col); px(x, barY + 1, col); }
+    }
+    return 2;
+  }
+  if (durSecCurrent > 0) {
+    let done = durSecCurrent - remTop;
+    if (done < 0) done = 0;
+    if (done > durSecCurrent) done = durSecCurrent;
+    const filled = Math.trunc((done * W) / durSecCurrent);
+    const col = c565(Math.trunc(255 + ((25 - 255) * done) / durSecCurrent),
+                     Math.trunc(140 + ((200 - 140) * done) / durSecCurrent),
+                     Math.trunc(0 + ((25 - 0) * done) / durSecCurrent));
+    for (let x = 0; x < filled && x < W; x++) { px(x, barY, col); px(x, barY + 1, col); }
+    return 2;
+  }
+  return 0;
+}
+
 function render(doc, mode) {
   const TT = window.PANEL_FONT || window.TOMTHUMB;   // panel list font
   clearScreen();
@@ -248,6 +277,9 @@ function render(doc, mode) {
   // Shared by both modes (must precede the mode-1 early return).
   const curSetIdx = (typeof doc.set_index === 'number') ? doc.set_index : -1;
   const curSetPos = (typeof doc.set_pos === 'number') ? doc.set_pos : -1;
+  const curSetReps = doc.set_reps || 0;
+  const curSetRep = doc.set_rep || 0;          // 1-based
+  const inSet = curSetIdx >= 0 && curSetReps > 0;
 
   /* ---------------- mode 1: big countdown ---------------- */
   if (mode === 1) {
@@ -260,9 +292,15 @@ function render(doc, mode) {
     const wTime = timeStr.length * bigCharW;
     printBuiltin(Math.trunc((W - wTime) / 2), bigLineH, timeStr, firstColor, bigSize);
 
+    // Progress bar in the 2px gap under the big lines (same as classic).
+    const bBarY = 2 * bigLineH + 1;
+    let bListStart = 2 * bigLineH + 2;
+    const bBarH = drawTopBar(bBarY, curSetReps, curSetRep, durSecCurrent, remTop, inSet);
+    if (bBarH > 0) bListStart = bBarY + bBarH + 1;
+
     // The list fills the rest of the panel; the swim in progress is its first
     // row, so its name shows there instead of as a separate heading.
-    drawUpcomingList(arr, 2 * bigLineH + 2, curSetIdx, curSetPos,
+    drawUpcomingList(arr, bListStart, curSetIdx, curSetPos,
                      LIST_COLOR, MARK_SET, MARK_CURRENT, TT);
     return;
   }
@@ -277,33 +315,10 @@ function render(doc, mode) {
   printBuiltin(x0 + timeW + gapW, 0, metersStr, firstColor, 1);
 
   // ---- bar under the counters ----
-  const curSetReps = doc.set_reps || 0;
-  const curSetRep = doc.set_rep || 0;          // 1-based
-  const inSet = curSetIdx >= 0 && curSetReps > 0;
   const barY = counterH + 1;
   let listStartY = counterH + 2;
-
-  if (inSet) {
-    const gap = curSetReps > 8 ? 1 : 2;      // one segment per REPETITION
-    for (let i = 0; i < curSetReps; i++) {
-      let xs = Math.trunc((i * (W + gap)) / curSetReps);
-      let xe = Math.trunc(((i + 1) * (W + gap)) / curSetReps) - gap - 1;
-      if (xe < xs) xe = xs;
-      const col = (i === (curSetRep - 1)) ? MARK_CURRENT : BAR_IDLE;
-      for (let x = xs; x <= xe && x < W; x++) { px(x, barY, col); px(x, barY + 1, col); }
-    }
-    listStartY = barY + 4;
-  } else if (durSecCurrent > 0) {
-    let done = durSecCurrent - remTop;
-    if (done < 0) done = 0;
-    if (done > durSecCurrent) done = durSecCurrent;
-    const filled = Math.trunc((done * W) / durSecCurrent);
-    const col = c565(Math.trunc(255 + ((25 - 255) * done) / durSecCurrent),
-                     Math.trunc(140 + ((200 - 140) * done) / durSecCurrent),
-                     Math.trunc(0 + ((25 - 0) * done) / durSecCurrent));
-    for (let x = 0; x < filled && x < W; x++) { px(x, barY, col); px(x, barY + 1, col); }
-    listStartY = barY + 4;
-  }
+  const barH = drawTopBar(barY, curSetReps, curSetRep, durSecCurrent, remTop, inSet);
+  if (barH > 0) listStartY = barY + barH + 2;
 
   drawUpcomingList(arr, listStartY, curSetIdx, curSetPos,
                    LIST_COLOR, MARK_SET, MARK_CURRENT, TT);

@@ -413,6 +413,46 @@ static void drawUpcomingList(JsonArray arr, int startY,
   dma_display->setTextSize(1);
 }
 
+// The 2px bar under the counters. Inside a set: one segment per repetition of
+// that set, the current repetition blue. Otherwise: a fill bar for the current
+// swim, easing orange->green as it completes. Returns the bar height drawn (0
+// if nothing was drawn) so the caller can place the list below it.
+static int drawTopBar(int barY, int curSetReps, int curSetRep,
+                      long durSecCurrent, long remTop, bool inSet,
+                      uint16_t barIdle, uint16_t markCurrent)
+{
+  if (inSet) {
+    const int gap = (curSetReps > 8) ? 1 : 2;   // tighten spacing past 8 reps
+    for (int i = 0; i < curSetReps; ++i) {
+      int xs = (i * (PANEL_WIDTH + gap)) / curSetReps;
+      int xe = ((i + 1) * (PANEL_WIDTH + gap)) / curSetReps - gap - 1;
+      if (xe < xs) xe = xs;                      // at least one pixel per rep
+      uint16_t c = (i == (curSetRep - 1)) ? markCurrent : barIdle;
+      for (int x = xs; x <= xe && x < PANEL_WIDTH; ++x) {
+        dma_display->drawPixel(x, barY, c);
+        dma_display->drawPixel(x, barY + 1, c);
+      }
+    }
+    return 2;
+  }
+  if (durSecCurrent > 0) {
+    long done = durSecCurrent - remTop;
+    if (done < 0) done = 0;
+    if (done > durSecCurrent) done = durSecCurrent;
+    const int filled = (int)((done * PANEL_WIDTH) / durSecCurrent);
+    const uint8_t r = (uint8_t)(255 + ((25  - 255) * done) / durSecCurrent);
+    const uint8_t g = (uint8_t)(140 + ((200 - 140) * done) / durSecCurrent);
+    const uint8_t b = (uint8_t)(0   + ((25  - 0)   * done) / durSecCurrent);
+    const uint16_t c = dma_display->color565(r, g, b);
+    for (int x = 0; x < filled && x < PANEL_WIDTH; ++x) {
+      dma_display->drawPixel(x, barY, c);
+      dma_display->drawPixel(x, barY + 1, c);
+    }
+    return 2;
+  }
+  return 0;
+}
+
 void printJSon(DynamicJsonDocument doc)
 {
   if (!dma_display || !s_display_on) return;
@@ -504,6 +544,9 @@ void printJSon(DynamicJsonDocument doc)
   const ColorRGB LIST_COLOR{205, 133, 63};     // upcoming rows
   const int curSetIdx = doc["set_index"].is<int>() ? doc["set_index"].as<int>() : -1;
   const int curSetPos = doc["set_pos"].is<int>() ? doc["set_pos"].as<int>() : -1;
+  const int curSetReps = doc["set_reps"] | 0;
+  const int curSetRep  = doc["set_rep"]  | 0;   // 1-based
+  const bool inSet = (curSetIdx >= 0 && curSetReps > 0);
 
   // ================= Mode 1: big countdown =================
   // Large remaining meters + time for the current swim, then the upcoming list
@@ -529,9 +572,16 @@ void printJSon(DynamicJsonDocument doc)
     dma_display->setCursor((PANEL_WIDTH - wTime) / 2, bigLineH);
     dma_display->print(timeStr);
 
+    // Progress bar in the 2px gap under the two big lines (same as classic).
+    const int barY = 2 * bigLineH + 1;
+    int listStartY = 2 * bigLineH + 2;
+    int barH = drawTopBar(barY, curSetReps, curSetRep, durSecCurrent, remTop, inSet,
+                          color565(BAR_IDLE), color565(MARK_CURRENT));
+    if (barH > 0) listStartY = barY + barH + 1;
+
     // The list fills the rest of the panel. The swim in progress is simply its
     // first row, so its name appears there instead of as a separate heading.
-    drawUpcomingList(arr, 2 * bigLineH + 2, curSetIdx, curSetPos,
+    drawUpcomingList(arr, listStartY, curSetIdx, curSetPos,
                      color565(LIST_COLOR), color565(MARK_SET), color565(MARK_CURRENT));
     return;
   }
@@ -562,48 +612,12 @@ void printJSon(DynamicJsonDocument doc)
   dma_display->print(metersStr);
   
 
-  // ---- progress bar: one dashed segment per set, spanning the full width ----
-  // Sits between the counters and the list. Inside a set it shows one segment
-  // per REPETITION of that set, with the repetition in progress blue.
-  const int curSetReps = doc["set_reps"] | 0;
-  const int curSetRep  = doc["set_rep"]  | 0;   // 1-based
-  const bool inSet = (curSetIdx >= 0 && curSetReps > 0);
-
-  const int barY = counterH + 1;             // 2px tall bar just under the counters
+  // Progress bar between the counters and the list (shared with big mode).
+  const int barY = counterH + 1;
   int listStartY = counterH + 2;
-
-  if (inSet) {
-    // One segment per repetition of the set we're in; gaps tighten past 8.
-    const int gap = (curSetReps > 8) ? 1 : 2;
-    for (int i = 0; i < curSetReps; ++i) {
-      // Spread across the whole panel: the last segment always ends at x = 63.
-      int xs = (i * (PANEL_WIDTH + gap)) / curSetReps;
-      int xe = ((i + 1) * (PANEL_WIDTH + gap)) / curSetReps - gap - 1;
-      if (xe < xs) xe = xs;                  // at least one pixel per repetition
-      uint16_t c = color565(i == (curSetRep - 1) ? MARK_CURRENT : BAR_IDLE);
-      for (int x = xs; x <= xe && x < PANEL_WIDTH; ++x) {
-        dma_display->drawPixel(x, barY, c);
-        dma_display->drawPixel(x, barY + 1, c);
-      }
-    }
-    listStartY = barY + 4;                   // list clears the bar
-  } else if (durSecCurrent > 0) {
-    // Not in a set: fill the bar with progress through the current swim, the
-    // colour easing from orange at the start to green as it completes.
-    long done = durSecCurrent - remTop;
-    if (done < 0) done = 0;
-    if (done > durSecCurrent) done = durSecCurrent;
-    const int filled = (int)((done * PANEL_WIDTH) / durSecCurrent);
-    const uint8_t r = (uint8_t)(255 + ((25  - 255) * done) / durSecCurrent);
-    const uint8_t g = (uint8_t)(140 + ((200 - 140) * done) / durSecCurrent);
-    const uint8_t b = (uint8_t)(0   + ((25  - 0)   * done) / durSecCurrent);
-    const uint16_t c = dma_display->color565(r, g, b);
-    for (int x = 0; x < filled && x < PANEL_WIDTH; ++x) {
-      dma_display->drawPixel(x, barY, c);
-      dma_display->drawPixel(x, barY + 1, c);
-    }
-    listStartY = barY + 4;
-  }
+  int barH = drawTopBar(barY, curSetReps, curSetRep, durSecCurrent, remTop, inSet,
+                        color565(BAR_IDLE), color565(MARK_CURRENT));
+  if (barH > 0) listStartY = barY + barH + 2;
 
   // Prepare fonts: built-in for first item; TomThumb will be used for the rest (smaller)
   dma_display->setFont(nullptr);
