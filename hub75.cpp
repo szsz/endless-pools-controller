@@ -278,6 +278,11 @@ static void drawSetSidebar(int top, int bottom, int reps, bool segmented,
 // One upcoming-swim line in TomThumb: "<meters>m <paceglyph><SS> <note>", with
 // the note truncated to fit maxW. Falls back to plain M:SS when the pace is
 // outside the 1..3 minute range the glyphs can express.
+// Distances are right-aligned in this fixed pixel field so the pace column
+// begins at the same x on every row (padding is blank pixels in front, not
+// spaces - the space/'.' glyphs are unchanged). 16px = widest "999m".
+static const int DIST_FIELD_PX = 16;
+
 static void drawTomThumbPaceLine(int baseline, long meters, long pace,
                                  const String &note, int maxW,
                                  uint16_t metricCol, uint16_t noteCol)
@@ -286,27 +291,27 @@ static void drawTomThumbPaceLine(int baseline, long meters, long pace,
   const int mins = (int)(pace / 60), secs = (int)(pace % 60);
   const bool useGlyph = (mins >= 1 && mins <= 3);
 
-  // Fixed-width distance so length + pace align across rows: 3-char "<n>m"
-  // padded for <100m, or "X.YK" once past 999m (both four characters wide).
   char mb[8];
   if (meters > 999) snprintf(mb, sizeof mb, "%.1fK", meters / 1000.0);
-  else              snprintf(mb, sizeof mb, "%3ldm", meters);
+  else              snprintf(mb, sizeof mb, "%ldm", meters);
   String pre(mb);
   char sb[4]; snprintf(sb, sizeof sb, "%02d", secs);
   const String secsStr(sb);
   String tail = String(" ") + note;
 
   const int glyphAdv = 4;   // 3px of bars + 1px gap
-  const int fixed = textWidth(pre) + (useGlyph ? (glyphAdv + textWidth(secsStr))
-                                               : textWidth(fmtMMSSs(pace)));
+  const int fixed = DIST_FIELD_PX + (useGlyph ? (glyphAdv + textWidth(secsStr))
+                                              : textWidth(fmtMMSSs(pace)));
   while (fixed + (int)textWidth(tail) > maxW && tail.length() > 0) {
     tail.remove(tail.length() - 1);
   }
 
-  int cx = 0;
-  dma_display->setCursor(cx, baseline);
+  // right-align the distance so the pace always starts at DIST_FIELD_PX
+  int preX = DIST_FIELD_PX - (int)textWidth(pre);
+  if (preX < 0) preX = 0;
+  dma_display->setCursor(preX, baseline);
   dma_display->print(pre);
-  cx = dma_display->getCursorX();
+  int cx = DIST_FIELD_PX;
 
   if (useGlyph) {
     drawPaceMinuteGlyph(cx, baseline - 5, mins, 2, 5, 4, metricCol);  // 2px bars, flush right
@@ -356,25 +361,21 @@ static void drawUpcomingList(JsonArray arr, int startY,
       drawTomThumbPaceLine(baseline, meters, pace, noteStr, textW,
                            isCurrent ? markCur : listCol, listCol);
     } else {
-      // A rest has no distance: show dashes in its place. 3 dashes normally, but
-      // 2 once the duration reaches 10:00 (5-char time) so the row stays aligned.
-      const char *dashes = (dur >= 600) ? "-- " : "--- ";
-      String head = String(dashes) + fmtMMSSs(dur);
-      String line = head + " " + noteStr;
-      int16_t bx, by; uint16_t bw, bh;
-      dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);
-      while (bw > textW && line.length() > 1) {
-        line.remove(line.length() - 1);
-        dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);
-      }
-      // draw the head and the note separately so they can differ in colour
-      String shownNote = (line.length() > head.length()) ? line.substring(head.length()) : String();
+      // A rest has no distance: dashes fill the distance field (3 normally, 2
+      // once the duration hits 10:00), and the time sits in the pace column so
+      // it lines up under a swim's pace.
+      const char *dashes = (dur >= 600) ? "--" : "---";
       dma_display->setTextColor(isCurrent ? markCur : listCol);
       dma_display->setCursor(0, baseline);
-      dma_display->print(head);
+      dma_display->print(dashes);
+      dma_display->setCursor(DIST_FIELD_PX, baseline);
+      dma_display->print(fmtMMSSs(dur));
+      int cx = dma_display->getCursorX();
+      String tail = String(" ") + noteStr;
+      while (cx + (int)textWidth(tail) > textW && tail.length() > 0) tail.remove(tail.length() - 1);
       dma_display->setTextColor(listCol);
-      dma_display->setCursor(dma_display->getCursorX(), baseline);
-      dma_display->print(shownNote);
+      dma_display->setCursor(cx, baseline);
+      dma_display->print(tail);
     }
   };
 

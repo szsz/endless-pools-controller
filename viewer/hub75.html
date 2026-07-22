@@ -105,6 +105,7 @@ const DARK_ORANGE = c565(255,140,0), RED = c565(255,0,0), GREEN = c565(25,200,25
 // alternate) — matches hub75.cpp.
 const LIST_COLOR = c565(205,133,63);
 let CAPS = true;   // mirrors the device's "caps" setting
+const DIST_FIELD_PX = 16;   // distances right-align in this pixel field
 const BAR_IDLE = c565(255,140,0);        // progress-bar segment, not current
 const MARK_CURRENT = c565(40,120,255);   // blue: current swim
 const MARK_SET = c565(255,255,255);      // white: step belongs to a set
@@ -178,17 +179,17 @@ function drawPaceGlyph(x, top, mins, gw, gh, advance, color) {
 function drawPaceLineGFX(baseline, meters, pace, note, maxW, metricCol, noteCol, font) {
   const mins = Math.floor(pace / 60), secs = pace % 60;
   const useGlyph = mins >= 1 && mins <= 3;
-  // fixed-width distance: "<n>m" padded to 3 digits, or "X.YK" past 999m
-  const pre = meters > 999 ? (meters / 1000).toFixed(1) + 'K'
-                           : String(meters).padStart(3, ' ') + 'm';
+  // distance unpadded; right-aligned in a fixed pixel field so pace starts at DIST_FIELD_PX
+  const pre = meters > 999 ? (meters / 1000).toFixed(1) + 'K' : meters + 'm';
   const secsStr = String(secs).padStart(2, '0');
   let tail = ' ' + note;
   const glyphAdv = 4;
-  const fixed = widthGFX(pre, font) + (useGlyph ? glyphAdv + widthGFX(secsStr, font)
-                                                : widthGFX(fmtMMSS(pace), font));
+  const fixed = DIST_FIELD_PX + (useGlyph ? glyphAdv + widthGFX(secsStr, font)
+                                          : widthGFX(fmtMMSS(pace), font));
   while (fixed + widthGFX(tail, font) > maxW && tail.length > 0) tail = tail.slice(0, -1);
-  let cx = 0;
+  let cx = Math.max(0, DIST_FIELD_PX - widthGFX(pre, font));
   for (const ch of pre) cx += drawCharGFX(cx, baseline, ch, metricCol, font);
+  cx = DIST_FIELD_PX;
   if (useGlyph) {
     drawPaceGlyph(cx, baseline - 5, mins, 2, 5, 4, metricCol);
     cx += glyphAdv;
@@ -385,11 +386,13 @@ function drawFutureRow(o, y, maxW, font, isCurrent) {
     const meters = dur > 0 ? Math.floor((dur * 100) / pace) : 0;
     drawPaceLineGFX(y, meters, pace, note, maxW, metricCol, LIST_COLOR, font);
   } else {
-    // a rest has no distance: 3 dashes in its place, 2 once it reaches 10:00
-    // (5-char time) so the row stays aligned
-    const head = (dur >= 600 ? '-- ' : '--- ') + fmtMMSS(dur);
+    // a rest has no distance: dashes fill the field (3, or 2 past 10:00), time
+    // in the pace column so it lines up under a swim's pace
+    const dashes = dur >= 600 ? '--' : '---';
     let cx = 0;
-    for (const ch of head) cx += drawCharGFX(cx, y, ch, metricCol, font);
+    for (const ch of dashes) cx += drawCharGFX(cx, y, ch, metricCol, font);
+    cx = DIST_FIELD_PX;
+    for (const ch of fmtMMSS(dur)) cx += drawCharGFX(cx, y, ch, metricCol, font);
     let tail = ' ' + note;
     while (cx + widthGFX(tail, font) > maxW && tail.length > 0) tail = tail.slice(0, -1);
     for (const ch of tail) cx += drawCharGFX(cx, y, ch, LIST_COLOR, font);
