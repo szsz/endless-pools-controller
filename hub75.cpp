@@ -496,7 +496,6 @@ void printJSon(DynamicJsonDocument doc)
   auto lineHeightBuiltin = [](uint8_t size) -> int { return 8 * (int)size; };
 
   bool paused = doc["paused"] | false;
-  const ColorRGB headerRGB = paused ? RED : DARK_ORANGE;
 
   // Extract current step note and remaining seconds
   String curNote = doc["current_step_note"].is<const char*>() ? String(doc["current_step_note"].as<const char*>()) : String("");
@@ -546,10 +545,11 @@ void printJSon(DynamicJsonDocument doc)
   String metersStr = String(metersVal) + "m";
   if(metersVal==0)
       metersStr ="";
-  // First item determines the color of the counters:
-  // - Swim (pace > 0): GREEN
-  // - Rest (pace == 0): DARK_ORANGE if not paused, RED if paused
-  ColorRGB firstColor = (pace100s > 0) ? GREEN : (paused ? RED : DARK_ORANGE);
+  // Base colour of the current step: green swim / orange rest. Pause does NOT
+  // change this - only the countdown goes red (see countdownCol), so a paused
+  // rest's "REST"/meters text stays orange instead of turning the panel red.
+  ColorRGB firstColor = (pace100s > 0) ? GREEN : DARK_ORANGE;
+  const uint16_t countdownCol = color565(paused ? RED : firstColor);
 
   // Shared by both modes.
   const ColorRGB BAR_IDLE{255, 140, 0};        // progress-bar segment, not current
@@ -572,16 +572,17 @@ void printJSon(DynamicJsonDocument doc)
 
     dma_display->setFont(nullptr);
     dma_display->setTextSize(bigSize);
-    dma_display->setTextColor(color565(firstColor));
 
-    // Line 1: remaining meters (or REST while resting)
+    // Line 1: remaining meters (or REST while resting) - step colour
+    dma_display->setTextColor(color565(firstColor));
     String bigTop = (pace100s > 0) ? (String(metersVal) + "m") : String("REST");
     int wTop = (int)bigTop.length() * bigCharW;
     if (wTop > PANEL_WIDTH) wTop = PANEL_WIDTH;
     dma_display->setCursor((PANEL_WIDTH - wTop) / 2, 0);
     dma_display->print(bigTop);
 
-    // Line 2: remaining time
+    // Line 2: remaining time - the countdown, red while paused
+    dma_display->setTextColor(countdownCol);
     int wTime = (int)timeStr.length() * bigCharW;
     dma_display->setCursor((PANEL_WIDTH - wTime) / 2, bigLineH);
     dma_display->print(timeStr);
@@ -623,12 +624,14 @@ void printJSon(DynamicJsonDocument doc)
   int combinedW = timeW + gapW + metersW;
 
   dma_display->setTextSize(counterSize);
-  dma_display->setTextColor(color565(firstColor));
 
   int x0 = (PANEL_WIDTH - combinedW) / 2;
   int y0 = 0;
-  dma_display->setCursor(x0, y0);  
+  // countdown (time) is red while paused; the metres keep the step colour
+  dma_display->setTextColor(countdownCol);
+  dma_display->setCursor(x0, y0);
   dma_display->print(timeStr);
+  dma_display->setTextColor(color565(firstColor));
   dma_display->setCursor(x0 + timeW + gapW, y0);
   dma_display->print(metersStr);
   

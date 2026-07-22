@@ -275,7 +275,9 @@ function render(doc, mode) {
   let metersVal = pace100s > 0 ? Math.floor((remTop * 100) / pace100s) : 0;
   let metersStr = metersVal === 0 ? '' : metersVal + 'm';
 
-  const firstColor = pace100s > 0 ? GREEN : (paused ? RED : DARK_ORANGE);
+  // step colour (no pause); only the countdown goes red when paused
+  const firstColor = pace100s > 0 ? GREEN : DARK_ORANGE;
+  const countdownCol = paused ? RED : firstColor;
 
   // Shared by both modes (must precede the mode-1 early return).
   const curSetIdx = (typeof doc.set_index === 'number') ? doc.set_index : -1;
@@ -293,7 +295,7 @@ function render(doc, mode) {
     printBuiltin(Math.trunc((W - wTop) / 2), 0, bigTop, firstColor, bigSize);
 
     const wTime = timeStr.length * bigCharW;
-    printBuiltin(Math.trunc((W - wTime) / 2), bigLineH, timeStr, firstColor, bigSize);
+    printBuiltin(Math.trunc((W - wTime) / 2), bigLineH, timeStr, countdownCol, bigSize);
 
     // Progress bar directly under the big lines (no gap) so the last list row fits.
     const bBarY = 2 * bigLineH;          // rows 32-33, right below line 2 (ends 31)
@@ -316,7 +318,7 @@ function render(doc, mode) {
   if (timeW + gapW + metersW > W) gapW = Math.max(1, W - timeW - metersW);
   const combinedW = timeW + gapW + metersW;
   const x0 = Math.trunc((W - combinedW) / 2);
-  printBuiltin(x0, 0, timeStr, firstColor, 1);
+  printBuiltin(x0, 0, timeStr, countdownCol, 1);
   printBuiltin(x0 + timeW + gapW, 0, metersStr, firstColor, 1);
 
   // ---- bar under the counters ----
