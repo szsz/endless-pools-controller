@@ -178,7 +178,9 @@ function drawPaceGlyph(x, top, mins, gw, gh, advance, color) {
 function drawPaceLineGFX(baseline, meters, pace, note, maxW, metricCol, noteCol, font) {
   const mins = Math.floor(pace / 60), secs = pace % 60;
   const useGlyph = mins >= 1 && mins <= 3;
-  const pre = meters + 'm';
+  // fixed-width distance: "<n>m" padded to 3 digits, or "X.YK" past 999m
+  const pre = meters > 999 ? (meters / 1000).toFixed(1) + 'K'
+                           : String(meters).padStart(3, ' ') + 'm';
   const secsStr = String(secs).padStart(2, '0');
   let tail = ' ' + note;
   const glyphAdv = 4;
@@ -383,8 +385,9 @@ function drawFutureRow(o, y, maxW, font, isCurrent) {
     const meters = dur > 0 ? Math.floor((dur * 100) / pace) : 0;
     drawPaceLineGFX(y, meters, pace, note, maxW, metricCol, LIST_COLOR, font);
   } else {
-    // "rest <duration>" takes the current colour; the note does not
-    const head = '-- ' + fmtMMSS(dur);          // a rest reads as "-- 0:20"
+    // a rest has no distance: 3 dashes in its place, 2 once it reaches 10:00
+    // (5-char time) so the row stays aligned
+    const head = (dur >= 600 ? '-- ' : '--- ') + fmtMMSS(dur);
     let cx = 0;
     for (const ch of head) cx += drawCharGFX(cx, y, ch, metricCol, font);
     let tail = ' ' + note;
@@ -474,6 +477,11 @@ function buildMock(nSets) {
     // last two sets are always back-to-back — that adjacency is what the dark
     // pixel at the bottom/top of neighbouring sidebars is for.
     if (s === 0 && nSets >= 3) steps.push({ pace100s: 90, durSec: 60, note: 'easy 100' });
+  }
+  // A set whose swim is over 999m, so the distance shows as "1.5K".
+  for (let rep = 1; rep <= 2; rep++) {
+    steps.push({ pace100s: 60, durSec: 900, note: 'long', set_index: nSets,
+                 set_rep: rep, set_reps: 2, set_size: 1, set_pos: 0, set_name: '2x 1.5K' });
   }
   // Long sections (>10 min) exercise the wider M:SS strings and big metre counts.
   steps.push({ pace100s: 105, durSec: 780, note: 'long steady' });  // 13:00

@@ -286,7 +286,12 @@ static void drawTomThumbPaceLine(int baseline, long meters, long pace,
   const int mins = (int)(pace / 60), secs = (int)(pace % 60);
   const bool useGlyph = (mins >= 1 && mins <= 3);
 
-  String pre = String(meters) + "m";
+  // Fixed-width distance so length + pace align across rows: 3-char "<n>m"
+  // padded for <100m, or "X.YK" once past 999m (both four characters wide).
+  char mb[8];
+  if (meters > 999) snprintf(mb, sizeof mb, "%.1fK", meters / 1000.0);
+  else              snprintf(mb, sizeof mb, "%3ldm", meters);
+  String pre(mb);
   char sb[4]; snprintf(sb, sizeof sb, "%02d", secs);
   const String secsStr(sb);
   String tail = String(" ") + note;
@@ -351,8 +356,10 @@ static void drawUpcomingList(JsonArray arr, int startY,
       drawTomThumbPaceLine(baseline, meters, pace, noteStr, textW,
                            isCurrent ? markCur : listCol, listCol);
     } else {
-      // A rest: "rest <duration>" takes the current colour, the note does not.
-      String head = String("-- ") + fmtMMSSs(dur);   // a rest reads as "-- 0:20"
+      // A rest has no distance: show dashes in its place. 3 dashes normally, but
+      // 2 once the duration reaches 10:00 (5-char time) so the row stays aligned.
+      const char *dashes = (dur >= 600) ? "-- " : "--- ";
+      String head = String(dashes) + fmtMMSSs(dur);
       String line = head + " " + noteStr;
       int16_t bx, by; uint16_t bw, bh;
       dma_display->getTextBounds(line.c_str(), 0, baseline, &bx, &by, &bw, &bh);
