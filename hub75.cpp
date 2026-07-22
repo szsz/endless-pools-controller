@@ -611,9 +611,15 @@ void printJSon(DynamicJsonDocument doc)
 
   // Center counters: try to center "time  meters" on one row, else stack centered
   int gapSpaces = 2;
-  int gapW = charW * gapSpaces;  
+  int gapW = charW * gapSpaces;
   if(metersVal==0)
       gapW =0;
+  // When both counters are wide (e.g. "13:00" + "1000m"), the default gap
+  // overflows 64px; shrink the gap (keep >= 1px) so they still fit on one row.
+  if (timeW + gapW + metersW > PANEL_WIDTH) {
+    gapW = PANEL_WIDTH - timeW - metersW;
+    if (gapW < 1) gapW = 1;
+  }
   int combinedW = timeW + gapW + metersW;
 
   dma_display->setTextSize(counterSize);

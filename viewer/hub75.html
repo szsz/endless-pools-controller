@@ -311,7 +311,9 @@ function render(doc, mode) {
   /* ---------------- mode 0: classic list ---------------- */
   const charW = 6, counterH = 8;
   const timeW = timeStr.length * charW, metersW = metersStr.length * charW;
-  const gapW = metersVal === 0 ? 0 : charW * 2;
+  let gapW = metersVal === 0 ? 0 : charW * 2;
+  // shrink the gap (>=1px) when both counters are wide so they still fit 64px
+  if (timeW + gapW + metersW > W) gapW = Math.max(1, W - timeW - metersW);
   const combinedW = timeW + gapW + metersW;
   const x0 = Math.trunc((W - combinedW) / 2);
   printBuiltin(x0, 0, timeStr, firstColor, 1);
