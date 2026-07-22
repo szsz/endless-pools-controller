@@ -368,9 +368,15 @@ static void drawUpcomingList(JsonArray arr, int startY,
       dma_display->setTextColor(isCurrent ? markCur : listCol);
       dma_display->setCursor(0, baseline);
       dma_display->print(dashes);
-      dma_display->setCursor(DIST_FIELD_PX, baseline);
-      dma_display->print(fmtMMSSs(dur));
-      int cx = dma_display->getCursorX();
+      // Right-align the time so it ENDS where a swim's pace ends (pace column
+      // is glyph + two digits wide), keeping the note column aligned too.
+      const int paceEnd = DIST_FIELD_PX + 4 + (int)textWidth("00");
+      String tstr = fmtMMSSs(dur);
+      int tX = paceEnd - (int)textWidth(tstr);
+      if (tX < (int)textWidth(dashes) + 1) tX = (int)textWidth(dashes) + 1;
+      dma_display->setCursor(tX, baseline);
+      dma_display->print(tstr);
+      int cx = paceEnd;
       String tail = String(" ") + noteStr;
       while (cx + (int)textWidth(tail) > textW && tail.length() > 0) tail.remove(tail.length() - 1);
       dma_display->setTextColor(listCol);

@@ -391,8 +391,12 @@ function drawFutureRow(o, y, maxW, font, isCurrent) {
     const dashes = dur >= 600 ? '--' : '---';
     let cx = 0;
     for (const ch of dashes) cx += drawCharGFX(cx, y, ch, metricCol, font);
-    cx = DIST_FIELD_PX;
-    for (const ch of fmtMMSS(dur)) cx += drawCharGFX(cx, y, ch, metricCol, font);
+    // right-align the time so it ends where a swim's pace ends
+    const paceEnd = DIST_FIELD_PX + 4 + widthGFX('00', font);
+    const tstr = fmtMMSS(dur);
+    let tX = Math.max(widthGFX(dashes, font) + 1, paceEnd - widthGFX(tstr, font));
+    for (const ch of tstr) tX += drawCharGFX(tX, y, ch, metricCol, font);
+    cx = paceEnd;
     let tail = ' ' + note;
     while (cx + widthGFX(tail, font) > maxW && tail.length > 0) tail = tail.slice(0, -1);
     for (const ch of tail) cx += drawCharGFX(cx, y, ch, LIST_COLOR, font);
