@@ -58,6 +58,24 @@
   </section>
 
   <section class="card">
+    <h3 style="margin-top:0;">Server Name</h3>
+    <div class="row">
+      <label class="inline" for="hostname">
+        <span>Name</span>
+        <input id="hostname" type="text" placeholder="swimmachine" maxlength="32"
+               autocapitalize="off" autocomplete="off" spellcheck="false" />
+        <span>.local</span>
+      </label>
+      <button id="hostnameBtn">Rename &amp; restart</button>
+    </div>
+    <p class="muted">Sets the device's network name — you'll reach it at
+      <code>&lt;name&gt;.local</code>, and it's also the OTA name. Letters, digits and
+      hyphens only (spaces become hyphens). The device <strong>restarts</strong> to apply
+      it, so reconnect at the new address afterwards.</p>
+    <div id="hnMsg" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
     <h3 style="margin-top:0;">Swim Machine</h3>
     <div class="row">
       <label class="inline" for="dryRun">
@@ -145,6 +163,9 @@
     const panelModeEl = $('#panelMode');
     const capsEl = $('#caps');
     const pmMsgEl = $('#pmMsg');
+    const hostnameEl = $('#hostname');
+    const hostnameBtn = $('#hostnameBtn');
+    const hnMsgEl = $('#hnMsg');
 
     function flash(el, text, ok) {
       el.textContent = text || '';
@@ -185,6 +206,20 @@
       patchSettings({ panel_mode: parseInt(e.target.value, 10) }, pmMsgEl, 'Display mode saved');
     });
 
+    // Renaming reboots the device, so it's an explicit button, not on-change.
+    hostnameBtn.addEventListener('click', async () => {
+      const name = (hostnameEl.value || '').trim();
+      if (!name) { flash(hnMsgEl, 'Enter a name', false); return; }
+      if (!confirm(`Rename to "${name}" and restart the device?\nYou'll need to reconnect at ${name}.local`)) return;
+      const j = await patchSettings({ hostname: name }, hnMsgEl, '');
+      if (j) {
+        const applied = j.hostname || name;
+        hostnameEl.value = applied;
+        hnMsgEl.className = 'ok';
+        hnMsgEl.textContent = `Restarting… reconnect at ${applied}.local`;
+      }
+    });
+
     function setMsg(text, ok) {
       msgEl.textContent = text || '';
       msgEl.className = ok ? 'ok' : (text ? 'err' : '');
@@ -208,6 +243,7 @@
         dryRunEl.checked = j.dry_run === true;
         panelModeEl.value = String(j.panel_mode === 1 ? 1 : 0);
         capsEl.checked = j.caps !== false;   // default on
+        if (typeof j.hostname === 'string') hostnameEl.value = j.hostname;
       } catch (e) {
         console.error(e);
       }

@@ -202,12 +202,13 @@ void begin()
   // Settings API: brightness get/set
   g_server.on("/api/settings", HTTP_GET, [](AsyncWebServerRequest *r)
               {
-                StaticJsonDocument<192> d;
+                StaticJsonDocument<256> d;
                 d["brightness"] = HUB75_getBrightnessPercent();
                 d["screensaver_sec"] = HUB75_getScreensaverSec();
                 d["panel_mode"] = HUB75_getPanelMode();   // 0 = classic, 1 = big countdown
                 d["dry_run"] = AppSettings_getDryRun();
                 d["caps"] = AppSettings_getCaps();
+                d["hostname"] = NetworkSetup::getHostname();   // device name: <hostname>.local
                 // Capability flag: this firmware stores nested "set" items
                 // (repeat xN). Older firmware omits it, so the web UI can hide
                 // the set editor instead of silently corrupting sets.
@@ -251,12 +252,23 @@ void begin()
                   AppSettings_setDryRun(dr);
                   SwimMachine::setDryRun(dr);   // take effect immediately, even mid-run
                 }
-                StaticJsonDocument<192> resp;
+                // Renaming schedules a restart, so handle it after reading every
+                // other field and set the response before the device reboots.
+                bool renaming = false;
+                if (d.containsKey("hostname")) {
+                  String hn = String((const char*)(d["hostname"] | ""));
+                  if (hn.length() == 0) { r->send(400, "text/plain", "hostname empty"); return; }
+                  NetworkSetup::setHostname(hn);
+                  renaming = true;
+                }
+                StaticJsonDocument<256> resp;
                 resp["brightness"] = HUB75_getBrightnessPercent();
                 resp["screensaver_sec"] = HUB75_getScreensaverSec();
                 resp["panel_mode"] = HUB75_getPanelMode();
                 resp["dry_run"] = AppSettings_getDryRun();
                 resp["caps"] = AppSettings_getCaps();
+                resp["hostname"] = NetworkSetup::getHostname();
+                resp["restarting"] = renaming;   // client should reconnect at the new name
                 String out; serializeJson(resp, out);
                 send_json(r, out);
               });

@@ -173,7 +173,10 @@ EOF
 fi
 
 # ---------- 3. serial port ----------
-if [ -z "$PORT" ]; then
+# A build-only run never touches the board, so don't require a port for it.
+if [ "$BUILD_ONLY" = 1 ] && [ -z "$PORT" ]; then
+  PORT=""   # skip detection; compile step below doesn't use it
+elif [ -z "$PORT" ]; then
   info "Auto-detecting ESP32-S3 serial port…"
   preferred=""; others=()
   for dev in /dev/ttyUSB* /dev/ttyACM*; do
@@ -197,7 +200,9 @@ if [ -z "$PORT" ]; then
   fi
   ok "Using port: $PORT"
 fi
-[ -e "$PORT" ] || die "Port $PORT does not exist."
+if [ -n "$PORT" ]; then
+  [ -e "$PORT" ] || die "Port $PORT does not exist."
+fi
 
 # permission sanity check
 if [ ! -w "$PORT" ]; then

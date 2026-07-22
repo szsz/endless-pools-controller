@@ -47,4 +47,10 @@ public:
 
   // Apply Wi-Fi credentials immediately (can be called anytime)
   static void setNewWifiCredentials(const String& ssid, const String& password);
+
+  // Device network name: <hostname>.local (mDNS) and the OTA name. Persisted in
+  // LittleFS (/hostname), defaults to HOSTNAME. Changing it saves the value and
+  // schedules a restart so mDNS/OTA re-register cleanly under the new name.
+  static String getHostname();
+  static void   setHostname(const String& name);
 };
