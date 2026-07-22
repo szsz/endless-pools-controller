@@ -245,6 +245,10 @@ function render(doc, mode) {
 
   const firstColor = pace100s > 0 ? GREEN : (paused ? RED : DARK_ORANGE);
 
+  // Shared by both modes (must precede the mode-1 early return).
+  const curSetIdx = (typeof doc.set_index === 'number') ? doc.set_index : -1;
+  const curSetPos = (typeof doc.set_pos === 'number') ? doc.set_pos : -1;
+
   /* ---------------- mode 1: big countdown ---------------- */
   if (mode === 1) {
     const bigSize = 2, bigCharW = 12, bigLineH = 16;
@@ -273,8 +277,6 @@ function render(doc, mode) {
   printBuiltin(x0 + timeW + gapW, 0, metersStr, firstColor, 1);
 
   // ---- bar under the counters ----
-  const curSetIdx = (typeof doc.set_index === 'number') ? doc.set_index : -1;
-  const curSetPos = (typeof doc.set_pos === 'number') ? doc.set_pos : -1;
   const curSetReps = doc.set_reps || 0;
   const curSetRep = doc.set_rep || 0;          // 1-based
   const inSet = curSetIdx >= 0 && curSetReps > 0;
