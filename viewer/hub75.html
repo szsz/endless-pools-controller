@@ -292,9 +292,9 @@ function render(doc, mode) {
     const wTime = timeStr.length * bigCharW;
     printBuiltin(Math.trunc((W - wTime) / 2), bigLineH, timeStr, firstColor, bigSize);
 
-    // Progress bar in the 2px gap under the big lines (same as classic).
-    const bBarY = 2 * bigLineH + 1;
-    let bListStart = 2 * bigLineH + 2;
+    // Progress bar directly under the big lines (no gap) so the last list row fits.
+    const bBarY = 2 * bigLineH;          // rows 32-33, right below line 2 (ends 31)
+    let bListStart = 2 * bigLineH + 1;
     const bBarH = drawTopBar(bBarY, curSetReps, curSetRep, durSecCurrent, remTop, inSet);
     if (bBarH > 0) bListStart = bBarY + bBarH + 1;
 

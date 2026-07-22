@@ -572,9 +572,10 @@ void printJSon(DynamicJsonDocument doc)
     dma_display->setCursor((PANEL_WIDTH - wTime) / 2, bigLineH);
     dma_display->print(timeStr);
 
-    // Progress bar in the 2px gap under the two big lines (same as classic).
-    const int barY = 2 * bigLineH + 1;
-    int listStartY = 2 * bigLineH + 2;
+    // Progress bar directly under the two big lines (no gap) so the last list
+    // row still fits on the 64px panel.
+    const int barY = 2 * bigLineH;        // rows 32-33, right below line 2 (ends 31)
+    int listStartY = 2 * bigLineH + 1;
     int barH = drawTopBar(barY, curSetReps, curSetRep, durSecCurrent, remTop, inSet,
                           color565(BAR_IDLE), color565(MARK_CURRENT));
     if (barH > 0) listStartY = barY + barH + 1;
