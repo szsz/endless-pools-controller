@@ -20,20 +20,20 @@ One 8-pin header (H1) carries both Ethernet and 12–24 V DC power. The LED pane
 
 ## Ethernet + power cable (H1)
 
-Wire the cable's far end as a standard **T568B** RJ45 plug. At the board end each of the 8 wires goes to its own H1 pin as below. Orange and green carry data, blue carries +12–24 V, and brown is ground. This is the same pair use as a common passive-PoE injector (+ on RJ45 pins 4/5, − on 7/8).
+Wire the cable's far end as a standard **T568B** RJ45 plug. At the board end each of the 8 wires goes to its own H1 pin as below. Orange and green carry data, brown carries +12–24 V, and blue is ground. Note that this is the reverse of the most common passive-PoE injectors (+ on RJ45 pins 4/5, − on 7/8): use an injector or supply that puts + on the brown pair (pins 7/8) and − on the blue pair (pins 4/5).
 
 ![H1 header with each cable wire colour drawn on its pin](images/v5-h1-cable-colours.png)
 
 | H1 pin | Signal | Wire colour (T568B) | RJ45 pin at far end |
 | --- | --- | --- | --- |
-| 1 | +12–24 V | Blue | 4 |
-| 2 | +12–24 V | White/blue | 5 |
+| 1 | +12–24 V | Brown | 8 |
+| 2 | +12–24 V | White/brown | 7 |
 | 3 | TX+ | White/orange | 1 |
 | 4 | TX− | Orange | 2 |
 | 5 | RX+ | White/green | 3 |
 | 6 | RX− | Green | 6 |
-| 7 | GND | White/brown | 7 |
-| 8 | GND | Brown | 8 |
+| 7 | GND | White/blue | 5 |
+| 8 | GND | Blue | 4 |
 
 - **Pin 1** is the square pad, bottom-left of the H1 block. Odd pins (1, 3, 5, 7) are the row nearer the board centre; even pins (2, 4, 6, 8) are the row at the board edge. The silkscreen reads +12–24V · TX+ TX− · RX+ RX− · GND GND.
 - Keep each pair twisted right up to the header, so white/orange stays with orange and white/green with green.
@@ -42,9 +42,9 @@ Wire the cable's far end as a standard **T568B** RJ45 plug. At the board end eac
 
 ## Power setup
 
-Use an isolated, current-limited **24 V DC** supply of at least **36 W (1.5 A)**, fed into the cable's blue (+) and brown (−) pairs with a passive injector. H1 is **not IEEE 802.3af/at PoE**: a PoE switch will not power it, and the board has no PoE detection.
+Use an isolated, current-limited **24 V DC** supply of at least **36 W (1.5 A)**, fed into the cable's brown (+) and blue (−) pairs. H1 is **not IEEE 802.3af/at PoE**: a PoE switch will not power it, and the board has no PoE detection.
 
-![Power wiring: 24 V adapter through a passive PoE injector, or split cable straight to H1](images/v5-power-wiring.png)
+![Power wiring: 24 V adapter through an injector, or split cable straight to H1](images/v5-power-wiring.png)
 
 | Item | Value |
 | --- | --- |
@@ -57,7 +57,7 @@ Use an isolated, current-limited **24 V DC** supply of at least **36 W (1.5 A)**
 
 **Why 24 V rather than 12 V:** the same power at half the current means a quarter of the voltage loss in the cable. At 12 V a full panel pulls about 2.4 A through four thin conductors, which is more than Ethernet cable is meant to carry and drops noticeably over a long run.
 
-**Wiring the supply:** injector DC+ → blue pair (H1 pins 1 and 2), injector DC− → brown pair (H1 pins 7 and 8). The injector's data port goes to your switch. A reversed supply is blocked by Q1 and won't damage the board, but the board stays off.
+**Wiring the supply:** DC+ → brown pair (H1 pins 1 and 2), DC− → blue pair (H1 pins 7 and 8). With an injector, its data port goes to your switch. A standard injector (+ on blue) is reversed for this cable: Q1 blocks it so the board isn't damaged, but the board stays off.
 
 **LED panel power:** run the panel's 5 V cable to the H2 screw terminal (+5V on the left, GND on the right as printed). Don't power the panel from a second supply at the same time.
 
@@ -101,7 +101,7 @@ To enter flashing mode without DTR/RTS wiring: hold pad 5 to GND, briefly short 
 
 - [ ] H1 wired to the colour table above; each pair still twisted to the header
 - [ ] Supply is passive DC (24 V recommended), not a PoE switch port
-- [ ] Supply polarity checked: blue = +, brown = −
+- [ ] Supply polarity checked: brown = +, blue = −
 - [ ] First power-up without the panel: measure 5 V on H2 and 3.3 V on H3 pad 1
 - [ ] Panel 5 V cable on H2 with correct polarity; no second supply connected to the panel
 - [ ] HUB75 orientation checked: J1 pin 15 (R1) reaches the panel's R1
