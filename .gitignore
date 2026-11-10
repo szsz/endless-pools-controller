@@ -9,3 +9,4 @@ boards.local.txt
 sketch.yaml
 .build/*
 buildarduino/*
+hardware/
