@@ -12,6 +12,28 @@ static const int PANEL_HEIGHT = 64;
 static const int PANEL_CHAIN  = 1;   // number of chained panels
 
 // User-provided pinout
+#ifdef SWIM_BOARD_V5
+// SwimMachine V5 board (ESP32-S3FH4R2 + W5500). GPIO45/46 are strapping pins on
+// V5, so D and CLK moved to 6/4. The V5 panel takes red and blue the other way
+// round from the J1 net names, hence R and B are swapped here (verified with a
+// red/green/blue/white stripe test on the real panel).
+static const int PIN_R1  = 18;
+static const int PIN_G1  = 21;
+static const int PIN_B1  = 17;
+static const int PIN_R2  = 5;
+static const int PIN_G2  = 16;
+static const int PIN_B2  = 15;
+
+static const int PIN_A   = 40;
+static const int PIN_B   = 41;
+static const int PIN_C   = 42;
+static const int PIN_D   = 6;
+static const int PIN_E   = 39;
+
+static const int PIN_CLK = 4;
+static const int PIN_LAT = 47;
+static const int PIN_OE  = 48;
+#else
 static const int PIN_R1  = 21;
 static const int PIN_G1  = 17;
 static const int PIN_B1  = 16;
@@ -28,6 +50,7 @@ static const int PIN_E   = 39;
 static const int PIN_CLK = 46;
 static const int PIN_LAT = 47;
 static const int PIN_OE  = 48;
+#endif
 
 /*************** State ***************/
 static MatrixPanel_I2S_DMA *dma_display = nullptr;

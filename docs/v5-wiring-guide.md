@@ -80,6 +80,16 @@ The panel's data lines are driven at 3.3 V logic straight from the ESP32, so the
 
 J1 is numbered in the reverse pair order of a standard HUB75 header (R1/G1 sit at pins 15/16, not 1/2). That fits a socket that plugs straight onto the panel's pins; with a ribbon cable, check that R1 lands on the panel's pin 1.
 
+**Panel colour order:** on the V5 panel, red and blue come out swapped relative to the J1 net names (a red/green/blue/white stripe test showed red as blue and blue as red; green was right). The V5 firmware compensates in software, so the GPIOs it actually drives are:
+
+| Panel colour | Upper half (GPIO) | Lower half (GPIO) |
+| --- | --- | --- |
+| Red | 18 | 5 |
+| Green | 21 | 16 |
+| Blue | 17 | 15 |
+
+If a different panel shows wrong colours, change only these six pins in `hub75.cpp` (the `SWIM_BOARD_V5` block).
+
 ### H2 – 5 V panel output
 
 Two-way screw terminal: **+5V** (left) and **GND** (right), 4 A max.
@@ -96,6 +106,26 @@ Two-way screw terminal: **+5V** (left) and **GND** (right), 4 A max.
 | 6 | GND | GND |
 
 To enter flashing mode without DTR/RTS wiring: hold pad 5 to GND, briefly short pad 4 to GND, then release pad 5. Serial runs at 115200 baud.
+
+## Firmware for V5
+
+V5 needs its own build: the ESP32-S3FH4R2 has **4 MB** in-package flash (the older board has 8 MB), 2 MB **quad** PSRAM, no USB wired (console on UART0 / H3), and different panel pins. `scripts/flash-linux.sh --board v5` handles all of it:
+
+- compiles with `-DSWIM_BOARD_V5` (V5 panel pins in `hub75.cpp`) and FQBN `esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default,PSRAM=enabled,FlashSize=4M,FlashMode=qio,PartitionScheme=custom`;
+- uses `partitions-v5.csv`: two 1.9 MB OTA app slots plus a 192 KB LittleFS (the app is about 1.25 MB);
+- writes bootloader, partition table, app and the `data/` filesystem over H3.
+
+```
+scripts/flash-linux.sh --board v5 --port /dev/ttyACM9        # first flash over the UART adapter
+scripts/flash-linux.sh --board v5 --build-only                # build only (for OTA)
+python3 scripts/ota_upload.py --target <board IP> --bin build/arduino-v5/endless-pools-controller.ino.bin
+```
+
+**USB-UART adapter:** besides TX/RX, the adapter's RTS must reach H3 pad 4 (EN) and DTR pad 5 (BOOT), or esptool cannot enter download mode. Check it with RTS asserted: the chip must go silent (held in reset). If it keeps printing, EN is not connected. Without auto-reset, hold pad 5 to GND while resetting.
+
+**Power while flashing:** the adapter's 3.3 V is enough to flash, but not for Wi-Fi: the board browns out as soon as Wi-Fi starts. Power it from H1 for normal use.
+
+**After boot:** the board tries Ethernet first, then Wi-Fi from `data/wifi_config.json`, and falls back to its own access point `swimmachine` at 192.168.4.1. Later updates go over the network (OTA port 3232, password from `otapassword.h`).
 
 ## Before powering up
 

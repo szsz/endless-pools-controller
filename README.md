@@ -153,6 +153,8 @@ Note on Ethernet: This firmware uses the Arduino Ethernet support for SPI W5500 
 
 Reference: https://www.waveshare.com/wiki/ESP32-S3-ETH
 
+> **SwimMachine V5 board (ESP32-S3FH4R2, 4 MB flash):** see [docs/v5-wiring-guide.md](docs/v5-wiring-guide.md) for the Ethernet/power cable, panel pins and building with `scripts/flash-linux.sh --board v5`.
+
 ### HUB75 LED Panel Wiring
 
 The HUB75 LED matrix panel is OPTIONAL — the controller works without it. If no panel is attached, the firmware still runs normally; the on-panel display code simply has nothing to drive. Skip this section if you don't want a status display.

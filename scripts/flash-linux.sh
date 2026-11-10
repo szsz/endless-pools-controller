@@ -26,6 +26,7 @@
 #   scripts/flash-linux.sh --port /dev/ttyUSB0     # explicit port
 #   scripts/flash-linux.sh --ota-password 'secret' # set OTA password on first build
 #   scripts/flash-linux.sh --build-only            # compile only, don't upload
+#   scripts/flash-linux.sh --board v5              # SwimMachine V5 board (4MB flash, see docs/v5-wiring-guide.md)
 #   scripts/flash-linux.sh --erase                 # full chip erase first (also wipes LittleFS)
 #   scripts/flash-linux.sh --no-data               # firmware only, keep the device's filesystem
 #   scripts/flash-linux.sh --no-verify             # skip the partition-table read-back
@@ -50,6 +51,8 @@ REPO_ROOT="${SCRIPT_DIR%/scripts}"
 
 # ---------- defaults ----------
 FQBN_DEFAULT="esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=cdc,PSRAM=opi,FlashSize=8M,PartitionScheme=custom"
+# V5 board: ESP32-S3FH4R2 = 4MB in-package flash + 2MB quad PSRAM; console on UART0 (no USB wired).
+FQBN_V5="esp32:esp32:esp32s3:USBMode=hwcdc,CDCOnBoot=default,PSRAM=enabled,FlashSize=4M,FlashMode=qio,PartitionScheme=custom"
 ESP32_INDEX_URL="https://espressif.github.io/arduino-esp32/package_esp32_index.json"
 # External Arduino libraries the sketch #includes (the esp32 core bundles WiFi/ETH/LittleFS/OTA/SPI).
 REQUIRED_LIBS=(
@@ -64,7 +67,8 @@ OTA_HEADER="$REPO_ROOT/otapassword.h"
 
 PARTITIONS_CSV="$REPO_ROOT/partitions.csv"
 PORT=""
-FQBN="$FQBN_DEFAULT"
+FQBN=""
+BOARD="default"
 OTA_PASSWORD=""
 BUILD_ONLY=0
 SKIP_CORE=0
@@ -109,6 +113,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     -p|--port)          PORT="${2:?--port needs a value}"; shift 2;;
     --fqbn)             FQBN="${2:?--fqbn needs a value}"; shift 2;;
+    --board)            BOARD="${2:?--board needs a value (default|v5)}"; shift 2;;
     --ota-password)     OTA_PASSWORD="${2:?--ota-password needs a value}"; shift 2;;
     --build-only)       BUILD_ONLY=1; shift;;
     --erase)            ERASE=1; shift;;
@@ -121,6 +126,25 @@ while [ $# -gt 0 ]; do
     *) die "Unknown argument: $1 (try --help)";;
   esac
 done
+
+# ---------- board selection ----------
+# The sketch's own partitions.csv always wins in the Arduino build, so the V5
+# build compiles a staged copy of the sketch whose partitions.csv is
+# partitions-v5.csv, with -DSWIM_BOARD_V5 selecting the V5 panel pins.
+SKETCH_DIR="$REPO_ROOT"
+EXTRA_PROPS=()
+case "$BOARD" in
+  default) [ -n "$FQBN" ] || FQBN="$FQBN_DEFAULT";;
+  v5)
+    [ -n "$FQBN" ] || FQBN="$FQBN_V5"
+    PARTITIONS_CSV="$REPO_ROOT/partitions-v5.csv"
+    BUILD_DIR="$REPO_ROOT/build/arduino-v5"
+    INO="$(ls "$REPO_ROOT"/*.ino | head -1)"
+    SKETCH_DIR="$REPO_ROOT/build/sketch-v5/$(basename "$INO" .ino)"
+    EXTRA_PROPS=(--build-property "compiler.cpp.extra_flags=-DSWIM_BOARD_V5")
+    ;;
+  *) die "Unknown --board '$BOARD' (use default or v5)";;
+esac
 
 confirm() { # confirm "question" -> returns 0 if yes
   [ "$ASSUME_YES" = 1 ] && return 0
@@ -229,9 +253,17 @@ awk -F',' '!/^[[:space:]]*#/ && NF>=5 {
   gsub(/^[ \t]+|[ \t]+$/,"",$3); gsub(/^[ \t]+|[ \t]+$/,"",$4); gsub(/^[ \t]+|[ \t]+$/,"",$5);
   printf "         %-9s %-5s %-8s %-10s %s\n", $1,$2,$3,$4,$5 }' "$PARTITIONS_CSV"
 
-info "Compiling  (FQBN: $FQBN)"
-arduino-cli compile "${V[@]}" -b "$FQBN" \
-  --build-path "$BUILD_DIR" --export-binaries "$REPO_ROOT"
+if [ "$SKETCH_DIR" != "$REPO_ROOT" ]; then
+  info "Staging V5 sketch copy in $SKETCH_DIR"
+  rm -rf "$SKETCH_DIR"; mkdir -p "$SKETCH_DIR"
+  cp "$REPO_ROOT"/*.ino "$REPO_ROOT"/*.cpp "$REPO_ROOT"/*.h "$SKETCH_DIR"/
+  cp -r "$REPO_ROOT/fonts" "$SKETCH_DIR"/
+  cp "$PARTITIONS_CSV" "$SKETCH_DIR/partitions.csv"
+fi
+
+info "Compiling  (board: $BOARD, FQBN: $FQBN)"
+arduino-cli compile "${V[@]}" -b "$FQBN" "${EXTRA_PROPS[@]}" \
+  --build-path "$BUILD_DIR" --export-binaries "$SKETCH_DIR"
 ok "Build complete → $BUILD_DIR"
 
 if [ "$BUILD_ONLY" = 1 ]; then
@@ -257,7 +289,7 @@ fi
 # 0xe000 otadata/boot_app0, 0x10000 application.
 info "Uploading over serial to $PORT …"
 arduino-cli upload "${V[@]}" -p "$PORT" -b "$FQBN" \
-  --input-dir "$BUILD_DIR" "$REPO_ROOT"
+  --input-dir "$BUILD_DIR" "$SKETCH_DIR"
 
 # Read the table back and prove it matches partitions.csv, so a later OTA
 # can't fail with "Could Not Activate The Firmware" for lack of a second slot.
