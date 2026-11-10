@@ -22,6 +22,8 @@ One 8-pin header (H1) carries both Ethernet and 12–24 V DC power. The LED pane
 
 Wire the cable's far end as a standard **T568B** RJ45 plug. At the board end each of the 8 wires goes to its own H1 pin as below. Orange and green carry data, blue carries +12–24 V, and brown is ground. This is the same pair use as a common passive-PoE injector (+ on RJ45 pins 4/5, − on 7/8).
 
+![H1 header with each cable wire colour drawn on its pin](images/v5-h1-cable-colours.png)
+
 | H1 pin | Signal | Wire colour (T568B) | RJ45 pin at far end |
 | --- | --- | --- | --- |
 | 1 | +12–24 V | Blue | 4 |
@@ -41,6 +43,8 @@ Wire the cable's far end as a standard **T568B** RJ45 plug. At the board end eac
 ## Power setup
 
 Use an isolated, current-limited **24 V DC** supply of at least **36 W (1.5 A)**, fed into the cable's blue (+) and brown (−) pairs with a passive injector. H1 is **not IEEE 802.3af/at PoE**: a PoE switch will not power it, and the board has no PoE detection.
+
+![Power wiring: 24 V adapter through a passive PoE injector, or split cable straight to H1](images/v5-power-wiring.png)
 
 | Item | Value |
 | --- | --- |
